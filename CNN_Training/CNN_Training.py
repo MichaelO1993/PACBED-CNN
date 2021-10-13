@@ -1,7 +1,7 @@
 # INPUT
 
 # Path and filename of dataframe (trained model and labels will be saved there)
-path_df = 'D:/Github/PACBED-CNN/Trained_Models/'
+path_df = 'D:/Github/Trained_Models/'
 df_name = 'df.csv'
 
 # Which cases should be trained (Thickness, Mistilt, Scale) - Train all cases in the vector

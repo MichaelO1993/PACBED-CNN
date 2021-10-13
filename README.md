@@ -33,8 +33,12 @@ An optional validation of the prediction contains:
 
 # Trainings dataset
 
-Trained models for rutile (TiO2) in 001-direction at 80 kV with a convergence angle of 20.8 mrad (+/- 1 mrad) are in the 'Trained_Models' folder. Measured PACBEDs are in the 'Measured_PACBED' folder. The last few PACBEDs are taken at 300 kV instead of 80 kV.
+Trained models for rutile (TiO2) in 001-direction at 80 kV with a convergence angle of 20.8 mrad (+/- 1 mrad) and measured PACBEDs can be downloaded from the following links. The last few PACBEDs are taken at 300 kV instead of 80 kV.
+
+Trained models: https://cloud.tugraz.at/index.php/s/oGdDdyWLoJfm447
+
+Measured PACBEDs: https://cloud.tugraz.at/index.php/s/YQr9FNon4ErWX8o
 
 The trainings dataset for this system can be downloaded under: https://cloud.tugraz.at/index.php/s/xmCrRkcqESzBkgp
 
-The zip-folder contains a python-script (Creating_Dataframe.py) to generate a dataframe from the trainings dataset, which is required for the CNN-training and the validation at the CNN-prediction. In the script, the path, where the dataset is saved, and the path/filename for saving the dataframe have to be changed.
+The zip-folder from the trainings dataset contains a python-script (Creating_Dataframe.py) to generate a dataframe from the trainings dataset, which is required for the CNN-training and the validation at the CNN-prediction. In the script, the path, where the dataset is saved, and the path/filename for saving the dataframe have to be changed.

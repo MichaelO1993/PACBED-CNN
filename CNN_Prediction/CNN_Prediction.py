@@ -1,10 +1,10 @@
 # INPUT
 
 # Select measured PACBED
-file_PACBED = 'D:/Github/PACBED-CNN/Measured_PACBED/PACBED_0.dm4'
+file_PACBED = 'D:/Github/Measured_PACBED/PACBED_0.dm4'
 
 # Select folder with CNN models and labels (for a specific system)
-path_models = 'D:/Github/PACBED-CNN/Trained_Models/'
+path_models = 'D:/Github/Trained_Models/'
 
 
 # Optional validation of the predictions
