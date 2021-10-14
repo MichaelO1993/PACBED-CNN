@@ -42,3 +42,12 @@ Measured PACBEDs: https://cloud.tugraz.at/index.php/s/YQr9FNon4ErWX8o
 The trainings dataset for this system can be downloaded under: https://cloud.tugraz.at/index.php/s/xmCrRkcqESzBkgp
 
 The zip-folder from the trainings dataset contains a python-script (Creating_Dataframe.py) to generate a dataframe from the trainings dataset, which is required for the CNN-training and the validation at the CNN-prediction. In the script, the path, where the dataset is saved, and the path/filename for saving the dataframe have to be changed.
+
+# Web API prototype
+
+To run the web API prototype:
+
+- Change into the `webapi` directory
+- `pip install -e .` to install the package and required dependencies (change to an appropriate Python virtual environment before)
+- run the server: `uvicorn pacbed_api:app --reload`
+- access the API docs at http://localost:8000
