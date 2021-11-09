@@ -37,7 +37,9 @@ Trained models for rutile (TiO2) in 001-direction at 80 kV with a convergence an
 
 Trained models: https://cloud.tugraz.at/index.php/s/oGdDdyWLoJfm447
 
-Measured PACBEDs: https://cloud.tugraz.at/index.php/s/YQr9FNon4ErWX8o
+Measured PACBEDs: 
+ - https://cloud.tugraz.at/index.php/s/YQr9FNon4ErWX8o (h5-format)
+ - https://cloud.tugraz.at/index.php/s/bTZ6coARLQamtWk (tensorflow lite format)
 
 The trainings dataset for this system can be downloaded under: https://cloud.tugraz.at/index.php/s/xmCrRkcqESzBkgp
 
