@@ -52,4 +52,4 @@ To run the web API prototype:
 - Change into the `webapi` directory
 - `pip install -e .` to install the package and required dependencies (change to an appropriate Python virtual environment before)
 - run the server: `uvicorn pacbed_api:app --reload`
-- access the API docs at http://localost:8000
+- access the API docs at http://localhost:8000/docs/

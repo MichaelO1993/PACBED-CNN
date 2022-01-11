@@ -2,6 +2,8 @@ from enum import Enum
 
 from pydantic import BaseModel
 
+
+# FIXME: might need to canonicalize zone axis
 class ZoneAxis(BaseModel):
     u: int
     v: int
@@ -14,11 +16,11 @@ class Point2D(BaseModel):
 
 
 class PACBEDAnalysisParams(BaseModel):
-    acceleration_voltage: float  # in V
+    acceleration_voltage: int  # in V
     crystal_structure: str  # FIXME: "SrTiO3" | "Rutile"; later: CIF files or whatever
     zone_axis: ZoneAxis
     convergence_angle: float  # mrad?
-    center: Point2D
+    # center: Point2D
 
 
 class DType(str, Enum):
@@ -44,4 +46,5 @@ class InferenceParameters(BaseModel):
 class InferenceResults(BaseModel):
     thickness: float  # in Angstrom?
     mistilt: float  # mrad?
+    scale: float  # unitless?
     # TODO: include confidence of prediction?
