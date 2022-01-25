@@ -3,6 +3,7 @@ import asyncio
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form
 from pydantic.types import Json
+import base64
 
 from . import schemas
 from .predictor import Predictor
@@ -49,7 +50,8 @@ async def sync_to_async(fn, pool=None, *args, **kwargs):
     return await loop.run_in_executor(pool, fn)
 
 
-# Json typing of `parameters` form param: https://github.com/tiangolo/fastapi/issues/2387#issuecomment-906761427
+# Json typing of `parameters` form param:
+# https://github.com/tiangolo/fastapi/issues/2387#issuecomment-906761427
 @app.post("/inference/")
 async def inference(
     parameters: Json[schemas.InferenceParameters] = Form(...),
@@ -70,11 +72,13 @@ async def inference(
     )
     # pattern = np.zeros((parameters.height, parameters.width), dtype=np.float32)
     result = await sync_to_async(predictor.predict, None, pattern)
+    validation = await sync_to_async(predictor.validate, None, result, pattern)
     print(result)
     return schemas.InferenceResults(
         thickness=result['thickness_pred'],
         mistilt=result['mistilt_pred'],
         scale=result['scale'],
+        validation=base64.encodebytes(validation.getbuffer())
     )
 
 
