@@ -47,4 +47,5 @@ class InferenceResults(BaseModel):
     thickness: float  # in Angstrom?
     mistilt: float  # mrad?
     scale: float  # unitless?
+    validation: str
     # TODO: include confidence of prediction?
