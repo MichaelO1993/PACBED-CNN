@@ -18,15 +18,14 @@ async def root():
     """
     return {"message": "Hello world!"}
 
-# Select folder with CNN models and labels (for a specific system)
-path_models = './PACBED-CNN-data/Trained_Models_lite/'
-dataframe_path = './PACBED-CNN-data/Trained_Models_lite/df.csv'
-simulation_path = './PACBED-CNN-data/'
+# Select folder with CNN models and labels for a specific system by its ID from Register.csv
+parameters_prediction = {
+    'id_system' : 0, # Id for the system from the register
+    'id_model' : 0, # Model Id from the specific system model register
+    'conv_angle' : 20.0 # Used convergence angle for recording the measured PACBED
+    }
 
-predictor = Predictor(
-    path_models,
-    dataframe_path,
-    simulation_path
+predictor = Predictor(parameters_prediction
 )
 
 
