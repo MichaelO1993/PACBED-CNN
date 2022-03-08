@@ -32,22 +32,35 @@ else:
 if tf.test.gpu_device_name():
     print('GPU found')
 else:
-    print("No GPU found")
+    print("No GPU used or found")
+
+def background_subtraction(pacbed_img):
+    # Subtract Background (improves prediction at larger thicknesses)
+    background = np.mean(pacbed_img) / 4
+    pacbed_background_sub = pacbed_img - background
+    pacbed_background_sub[pacbed_background_sub <= 0] = 0
+
+    print('Background subtracted')
+
+    return pacbed_background_sub
 
 
 # Function for finding center of mass
 def center_of_mass(image):
+    # Threshold for contributing to the center of mass
     threshold_value = filters.threshold_otsu(image)
+    # Generate mask
     labeled_foreground = (image > threshold_value).astype(int)
+    # Calculate center
     properties = regionprops(labeled_foreground, image)
     com = properties[0].centroid
+
     return com
 
 
 # Function for cropping the maximum square around the center of mass
-# (or shifting better? Square --> input for CNNs)
 def cropping_center_of_mass(PACBED, com):
-    # Finding maximum boundaries for the square
+    # Finding maximum boundaries for the cropping square
     if PACBED.shape[0] / 2 < com[0]:
         side_0 = PACBED.shape[0] - com[0]
     else:
@@ -57,9 +70,10 @@ def cropping_center_of_mass(PACBED, com):
     else:
         side_1 = com[1]
 
+    # Using smallest square
     square_side = side_0 if side_0 <= side_1 else side_1
 
-    # Define boundaries
+    # Define boundary indices
     x_0 = int(com[0] - square_side)
     x_1 = int(com[0] + square_side)
     y_0 = int(com[1] - square_side)
@@ -71,281 +85,410 @@ def cropping_center_of_mass(PACBED, com):
     return PACBED_cropped
 
 
-def preprocess(PACBED_measured):
+def center_PACBED(pacbed_img):
     # Calculate Center of Mass
-    com = center_of_mass(PACBED_measured)
+    com = center_of_mass(pacbed_img)
     com_cropping = np.round(com)
 
     # Crop measured PACBED
-    return cropping_center_of_mass(PACBED_measured, com_cropping)
+    pacbed_img = cropping_center_of_mass(pacbed_img, com_cropping)
+
+    print('PACBED centered')
+
+    return pacbed_img
 
 
-def redim(dim, PACBED_cropped):
-    dim = dim
-    img = PACBED_cropped[:, :, np.newaxis]
-    # from high resolution (4kx4k,..) to smaller resolution
-    img = tf.keras.preprocessing.image.smart_resize(
-        img, (4*dim[0], 4*dim[1]), interpolation='bilinear'
-    )
-    return img, dim
+# Convert PACBED to smaller dimension to increase speed
+def redim_PACBED(pacbed_img, dim=(680, 680)):
+    # Convert to PIL-framework
+    PACBED_img = Image.fromarray(pacbed_img)
+
+    # Resize
+    PACBED_img = PACBED_img.resize(dim, resample=Image.BICUBIC)
+
+    # Normalize for CNN
+    PACBED_arr = np.asarray(PACBED_img)
+    pacbed_img = (2 * PACBED_arr - np.amin(PACBED_arr) / (np.amax(PACBED_arr) - np.amin(PACBED_arr)) - 1).astype(
+        np.float32)
+
+    print(f'PACBED dimensions changed to {dim}')
+
+    return pacbed_img
 
 
-def rescale_resize(img, scale, dim):
-    # Scale image (with full pixels)
-    img = tf.keras.preprocessing.image.apply_affine_transform(
-        img,
-        zx=1/scale,
-        zy=1/scale,
-        row_axis=0,
-        col_axis=1,
-        channel_axis=2,
-        fill_mode='nearest',
-        cval=0.,
-        order=1
-    )
-    # Resize and normalize image for next predictions
-    img_arr = tf.keras.preprocessing.image.smart_resize(img, dim[0:2], interpolation='bilinear')
-    img_arr /= np.amax(img_arr)
-    return (img, img_arr)
+def show(pacbed_raw, pacbed_processed):
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+
+    ax1.imshow(pacbed_raw)
+    ax1.set_title('Measured PACBED')
+    ax2.imshow(pacbed_processed)
+    ax2.set_title('Processed PACBED')
+
+    fig.tight_layout()
 
 
 class Predictor:
-    def __init__(self, path_models, dataframe_path, simulation_path):
-        self.simulation_path = simulation_path
-        # Get all filenames of CNNs and labels
-        model_names = [os.path.basename(x) for x in glob.glob(path_models + '*.tflite')]
-        labels_names = [os.path.basename(x) for x in glob.glob(path_models + '*_labels.csv')]
+    def __init__(self, parameters_prediction):
+        # Declare variables
+        self.id_system = parameters_prediction['id_system']
+        self.id_model = parameters_prediction['id_model']
+        self.conv_angle = parameters_prediction['conv_angle']
 
-        # Load all models and labels
-        for i in range(0, len(model_names)):
+        self.pacbed_measured = None
+        self.conv_angle_norm = None
+        self.dataframe = None
+        self.dim = None
+        self.PACBED_scaled = None
+        # Scale CNN
+        self.interpreter_scale = None
+        self.scale_input_details = None
+        self.scale_output_details = None
+        # Thickness CNN
+        self.interpreter_thickness = None
+        self.thickness_input_details = None
+        self.thickness_output_details = None
+        # Mistilt CNN
+        self.interpreter_tilt = None
+        self.tilt_input_details = None
+        self.tilt_output_details = None
+        # Labels
+        self.label_scale = None
+        self.label_thickness = None
+        self.label_mistilt = None
+        # Results
+        self.result = {
+            'thickness_pred': None,
+            'thickness_cnn_output': None,
+            'mistilt_pred': None,
+            'mistilt_cnn_output': None,
+            'scale': None}
 
-            # Load all models to the correct variables
-            if model_names[i].find('Scale') > -1:
-                self.interpreter_scale = tf.lite.Interpreter(
-                    model_path=os.path.join(path_models, model_names[i])
-                )
+        # Get paths
+        self.Path_models, self.Path_dataframe = self.get_path(self.id_system, self.id_model)
+
+        # Load models and labels
+        self.load_files()
+
+    def get_path(self, id_system, id_model):
+        df_system = pd.read_csv('.\\data\\Register.csv', sep=';', index_col='id')
+        print('Loaded system:')
+        print(df_system.loc[[id_system]])  # double brackets to keep in the dataframe format
+
+        df_model = pd.read_csv(os.path.join(df_system.loc[id_system]['path'], 'models', 'Register_models.csv'), sep=';',
+                               index_col='id')
+        print('Loaded model:')
+        print(df_model.loc[[id_model]])
+
+        Path_models = df_model.loc[id_model]['path']
+        Path_dataframe = os.path.join(df_system.loc[id_system]['path'], 'simulation', 'df.csv')
+
+        return Path_models, Path_dataframe
+
+    def load_files(self):
+        # Get all filenames of models and labels
+        model_names = [os.path.basename(x) for x in glob.glob(os.path.join(self.Path_models, '*.tflite'))]
+        labels_names = [os.path.basename(x) for x in glob.glob(os.path.join(self.Path_models, '*_labels.csv'))]
+
+        # Load all models to the correct variable
+        for model_name in model_names:
+            if model_name.find('Scale') > -1:
+                # Tensorflow lite framework
+                self.interpreter_scale = tf.lite.Interpreter(model_path=os.path.join(self.Path_models, model_name))
                 self.interpreter_scale.allocate_tensors()
                 self.scale_input_details = self.interpreter_scale.get_input_details()
                 self.scale_output_details = self.interpreter_scale.get_output_details()
-            elif model_names[i].find('Thickness') > -1:
-                self.interpreter_thickness = tf.lite.Interpreter(
-                    model_path=os.path.join(path_models, model_names[i])
-                )
+            elif model_name.find('Thickness') > -1:
+                # Tensorflow lite framework
+                self.interpreter_thickness = tf.lite.Interpreter(model_path=os.path.join(self.Path_models, model_name))
                 self.interpreter_thickness.allocate_tensors()
                 self.thickness_input_details = self.interpreter_thickness.get_input_details()
                 self.thickness_output_details = self.interpreter_thickness.get_output_details()
-            elif model_names[i].find('Mistilt') > -1:
-                self.interpreter_tilt = tf.lite.Interpreter(
-                    model_path=os.path.join(path_models, model_names[i])
-                )
+            elif model_name.find('Mistilt') > -1:
+                # Tensorflow lite framework
+                self.interpreter_tilt = tf.lite.Interpreter(model_path=os.path.join(self.Path_models, model_name))
                 self.interpreter_tilt.allocate_tensors()
                 self.tilt_input_details = self.interpreter_tilt.get_input_details()
                 self.tilt_output_details = self.interpreter_tilt.get_output_details()
 
-            # Load all labels to the correct variables
-            if labels_names[i].find('Scale') > -1:
-                self.label_scale = pd.read_csv(os.path.join(path_models, labels_names[i]))
-            elif labels_names[i].find('Thickness') > -1:
-                self.label_thickness = pd.read_csv(os.path.join(path_models, labels_names[i]))
-            elif labels_names[i].find('Mistilt') > -1:
-                self.label_mistilt = pd.read_csv(os.path.join(path_models, labels_names[i]))
+                # Extract required input dimension from the thickness CNN
+        self.dim = self.thickness_input_details[1]['shape'][1:]
 
-        # Load dataframe (csv-file with out index)
-        self.dataframe = pd.read_csv(dataframe_path)
+        # Load all models to the correct variable
+        for label_name in labels_names:
+            if label_name.find('Scale') > -1:
+                self.label_scale = pd.read_csv(os.path.join(self.Path_models, label_name), sep=';')
+            elif label_name.find('Thickness') > -1:
+                self.label_thickness = pd.read_csv(os.path.join(self.Path_models, label_name), sep=';')
+            elif label_name.find('Mistilt') > -1:
+                self.label_mistilt = pd.read_csv(os.path.join(self.Path_models, label_name), sep=';')
 
-    def predict(self, PACBED_measured: np.ndarray):
-        assert len(PACBED_measured.shape) == 2
-        PACBED_cropped = preprocess(PACBED_measured)
-        # Extract required dimension from the thickness CNN (assumed that all CNNs have same input)
-        img, dim = redim(self.thickness_input_details[0]['shape'][1:], PACBED_cropped)
-        # Prepare image for CNN input by resizing and normalizing
-        img_arr = tf.keras.preprocessing.image.smart_resize(img, dim[0:2], interpolation='bilinear')
-        img_arr /= np.amax(img_arr)
+                # Load dataframe (csv-file with out index)
+        self.dataframe = pd.read_csv(self.Path_dataframe, sep=';')
 
-        # Make CNN-predictions
+        print('Models and Labels loaded.')
 
-        # Iterative scaling of the image
-        k = 0
-        scale_total = 1
-        scale_pred = 1
-        while True:
-            # Make scale prediction
-            img_arr = np.stack((img_arr[:, :, 0],)*3, axis=-1)
-            self.interpreter_scale.set_tensor(
-                self.scale_input_details[0]['index'], img_arr[np.newaxis, :, :, :]
-            )
-            self.interpreter_scale.invoke()
-            scale_prediction = self.interpreter_scale.get_tensor(
-                self.scale_output_details[0]['index']
-            )
+    def set_input(self, pacbed_measured, conv_angle):
+        # Measured PACBED
+        self.pacbed_measured = pacbed_measured[:, :, np.newaxis]
 
-            # scale_prediction = self.model_scale(img_arr[np.newaxis, :, :, :], training=False)
-            # call instead of predict may be faster
-            # Get scaling value with the highest predicted value
-            new_scale_pred = self.label_scale['Scale / []'][np.argmax(scale_prediction)]
-            scale_pred = (k*scale_pred + (5-k)*new_scale_pred) / 5
-            # print(new_scale_pred, scale_pred)
-            # Break loop if scaling is 5, maximum runs of the loop is exceeded or the
-            # prediction is too low
-            if np.abs(new_scale_pred - 1) < 0.05:
-                break
-            elif k > 5 or np.amax(scale_prediction) < 0.3:
-                break
-                # raise RuntimeError("Could not predict scale")
-            else:
-                img, img_arr = rescale_resize(img, scale_pred, dim[0:2])
-                # Loop counter
-                k += 1
-                scale_total *= scale_pred
+        # Used convergence angle
+        conv_angle_unique = np.unique(self.dataframe['Conv_Angle'])
+        # Calculate scaled convergence angle
+        self.conv_angle_norm = ((conv_angle - np.amin(conv_angle_unique)) / (
+                    np.amax(conv_angle_unique) - np.amin(conv_angle_unique))).astype(np.float32)
 
-        # PACBED for validation
-        self.PACBED_validate = img_arr[:, :, 0]
+    # Scaling the PACBED by CNN
+    def scale_pacbed(self, scale_const=None):
+        # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
+        img_CNN, img_scaling = self.rescale_resize(self.pacbed_measured, 1, self.dim)
+
+        if scale_const == None:
+            # Iterative scaling of the image by CNN
+            k = 0
+            scale_total = 1
+            scale_pred = 1
+            while True:
+                # Transform image to RGB for CNN input
+                img_CNN = np.tile(img_CNN, (1, 1, 3))
+
+                # Input PACBED and normalized convergence angle in the correct format
+                self.interpreter_scale.set_tensor(self.scale_input_details[0]['index'],
+                                                  self.conv_angle_norm[np.newaxis][np.newaxis, :])
+                self.interpreter_scale.set_tensor(self.scale_input_details[1]['index'], img_CNN[np.newaxis, :, :, :])
+
+                # Interfere and make prediction
+                self.interpreter_scale.invoke()
+                scale_prediction = self.interpreter_scale.get_tensor(self.scale_output_details[0]['index'])
+
+                # Get scaling value with the highest predicted value
+                new_scale_pred = self.label_scale['Scale / []'][np.argmax(scale_prediction)]
+
+                # Damp prediction to avoid oscillating
+                scale_pred = (k * scale_pred + (10 - k) * new_scale_pred) / 10
+
+                # Break loop conditions if maximum iteration is reached or prediction output is too small
+                if k > 10 or np.amax(scale_prediction) < 0.5:
+                    break
+                    # raise RuntimeError("Could not predict scale")
+                else:
+                    img_CNN, img_scaling = self.rescale_resize(img_scaling, scale_pred, self.dim[0:2])
+                    # Loop counter
+                    k += 1
+                    scale_total *= scale_pred
+        else:
+            # Constant scaling with given value
+            img_scaling, img_CNN = self.rescale_resize(img_scaling, scale_const, self.dim[0:2])
+            img_CNN = np.tile(img_CNN, (1, 1, 3))
+
+        # Save total scaling value
+        self.result['scale'] = scale_total
+
+        # Save scaled PACBED
+        self.PACBED_scaled = img_CNN
+
+    def rescale_resize(self, img, scale, dim):
+        # Scale image (with full pixels)
+        img = tf.keras.preprocessing.image.apply_affine_transform(
+            img,
+            zx=1 / scale,
+            zy=1 / scale,
+            row_axis=0,
+            col_axis=1,
+            channel_axis=2,
+            fill_mode='constant',
+            cval=-1.,
+            order=1
+        )
+
+        # Resize and normalize image for next predictions
+        img_cnn = tf.keras.preprocessing.image.smart_resize(img, dim[0:2], interpolation='bilinear')
+        img_cnn = (2 * (img_cnn - np.amin(img_cnn)) / (np.amax(img_cnn) - np.amin(img_cnn)) - 1).astype(np.float32)
+
+        return (img_cnn, img)
+
+    def predict(self, pacbed_measured: np.ndarray):
+
+        assert len(pacbed_measured.shape) == 2
+
+        # Preprocess PACBED
+        # Subtract background
+        pacbed_processed = background_subtraction(pacbed_measured)
+        # Center PACBED
+        pacbed_processed = center_PACBED(pacbed_processed)
+        # Redim PACBED
+        pacbed_processed = redim_PACBED(pacbed_processed, dim=(680, 680))
+
+        # Set input
+        self.set_input(pacbed_processed, self.conv_angle)
+
+        # Scale PACBED
+        self.scale_pacbed()
 
         # Make thickness prediction
-        self.interpreter_thickness.set_tensor(
-            self.thickness_input_details[0]['index'], img_arr[np.newaxis, :, :, :]
-        )
-        self.interpreter_thickness.invoke()
-        thickness_prediction = self.interpreter_thickness.get_tensor(
-            self.thickness_output_details[0]['index']
-        )
 
-        # thickness_prediction = self.model_thickness(img_arr[np.newaxis, :, :, :],training=False)
+        # Set input for CNN
+        self.interpreter_thickness.set_tensor(self.scale_input_details[0]['index'],
+                                              self.conv_angle_norm[np.newaxis][np.newaxis, :])
+        self.interpreter_thickness.set_tensor(self.scale_input_details[1]['index'],
+                                              self.PACBED_scaled[np.newaxis, :, :, :])
+
+        # Interfere and make prediction
+        self.interpreter_thickness.invoke()
+        thickness_cnn_output = self.interpreter_thickness.get_tensor(self.thickness_output_details[0]['index'])
+
         # Get thickness value with the highest predicted value
-        thickness_pred = self.label_thickness['Thickness / A'][np.argmax(thickness_prediction)]
+        thickness_predicted = self.label_thickness['Thickness / A'][np.argmax(thickness_cnn_output)]
 
         # Make mistilt prediction
-        self.interpreter_tilt.set_tensor(
-            self.tilt_input_details[0]['index'], img_arr[np.newaxis, :, :, :]
-        )
+
+        # Set input for CNN
+        self.interpreter_tilt.set_tensor(self.scale_input_details[0]['index'],
+                                         self.conv_angle_norm[np.newaxis][np.newaxis, :])
+        self.interpreter_tilt.set_tensor(self.scale_input_details[1]['index'], self.PACBED_scaled[np.newaxis, :, :, :])
+
+        # Interfere and make prediction
         self.interpreter_tilt.invoke()
-        mistilt_prediction = self.interpreter_tilt.get_tensor(self.tilt_output_details[0]['index'])
+        mistilt_cnn_output = self.interpreter_tilt.get_tensor(self.tilt_output_details[0]['index'])
 
-        # mistilt_prediction = self.model_tilt(img_arr[np.newaxis, :, :, :],training=False)
         # Get mistilt value with the highest predicted value
-        mistilt_pred = self.label_mistilt['Mistilt / mrad'][np.argmax(mistilt_prediction)]
-        result = {
-            'thickness_prediction': thickness_prediction,
-            'thickness_pred': thickness_pred,
-            'mistilt_prediction': mistilt_prediction,
-            'mistilt_pred': mistilt_pred,
-            'scale': scale_total,
+        mistilt_predicted = self.label_mistilt['Mistilt / mrad'][np.argmax(mistilt_cnn_output)]
 
-        }
-        return result
+        # Save results
+        self.result['thickness_pred'] = thickness_predicted
+        self.result['thickness_cnn_output'] = thickness_cnn_output
+        self.result['mistilt_pred'] = mistilt_predicted
+        self.result['mistilt_cnn_output'] = mistilt_cnn_output
 
-    def validate(self, result, PACBED_measured):
-        fig = plt.figure(figsize=(12, 20), constrained_layout=True)
+        return self.result
 
-        # Plot imported PACBED and the scaled PACBED,
-        # which is used for thickness and mistilt prediction
-        fig1, fig2, fig3 = fig.subfigures(3, 1)
-        ax11 = fig1.add_subplot(1, 2, 1)
-        ax12 = fig1.add_subplot(1, 2, 2)
-        fig1.suptitle('PACBED')
-        ax11.imshow(PACBED_measured)
-        ax11.set_title('Loaded PACBED')
-        ax12.imshow(self.PACBED_validate)
-        ax12.set_title('PACBED for prediction')
+    def validate(self, result, PACBED_measured, azimuth_i=0):
 
-        # Plot output of the thickness model and the mistilt model
+        # Create figure with special subplots
+        fig, axs = plt.subplots(ncols=2, nrows=3, figsize=(8, 10), gridspec_kw={'height_ratios': [1.5, 1, 1]})
+        # Modifying subplots
+
+        # First row
+        gs = axs[-1, 0].get_gridspec()
+        # Remove the underlying axes
+        for ax in axs[-1, :]:
+            ax.remove()
+        ax1 = fig.add_subplot(gs[-1, :])
+
+        # Second row
+        gs = axs[-2, 0].get_gridspec()
+        # Remove the underlying axes
+        for ax in axs[-2, :]:
+            ax.remove()
+        ax2 = fig.add_subplot(gs[-2, :])
+
         # Sort thickness values (if labels are not ascended ordered)
         thickness_sort_ind = np.argsort(self.label_thickness.iloc[:, 0])
-        thickness_pred_sorted = np.array(result['thickness_prediction'])[0, thickness_sort_ind]
+        thickness_pred_sorted = np.array(result['thickness_cnn_output'])[0, thickness_sort_ind]
         thickness_values_sorted = np.array(self.label_thickness.iloc[:, 0][thickness_sort_ind])
 
         # Sort mistilt values (if labels are not ascended ordered)
         mistilt_sort_ind = np.argsort(self.label_mistilt.iloc[:, 0])
-        mistilt_pred_sorted = np.array(result['mistilt_prediction'])[0, mistilt_sort_ind]
+        mistilt_pred_sorted = np.array(result['mistilt_cnn_output'])[0, mistilt_sort_ind]
         mistilt_values_sorted = np.array(self.label_mistilt.iloc[:, 0][mistilt_sort_ind])
 
-        ax21 = fig2.add_subplot(2, 1, 1)
-        ax22 = fig2.add_subplot(2, 1, 2)
-
         # Plot output of thickness prediction
-        ax21.plot(thickness_values_sorted/10, thickness_pred_sorted)
-        ax21.set_title('Thickness Prediction')
-        ax21.set_xlim([np.amin(thickness_values_sorted)/10, np.amax(thickness_values_sorted)/10])
-        ax21.set_ylim([0, 1])
-        ax21.set_xlabel('Thickness / nm')
+        lineplot_thick = ax2.plot(thickness_values_sorted / 10, thickness_pred_sorted, linestyle='-', color='b',
+                                  zorder=0)
+        scatter_2 = ax2.plot(thickness_values_sorted[np.argmax(thickness_pred_sorted)] / 10,
+                             thickness_pred_sorted[np.argmax(thickness_pred_sorted)], marker='o', color='r')
+        ax2.set_title('Thickness Prediction')
+        ax2.set_xlim([np.amin(thickness_values_sorted) / 10, np.amax(thickness_values_sorted) / 10])
+        ax2.set_ylim([0, 1])
+        ax2.set_xlabel('Thickness / nm')
+
         # Plot output of mistilt prediction
-        ax22.plot(mistilt_values_sorted, mistilt_pred_sorted)
-        ax22.set_title('Mistilt Prediction')
-        ax22.set_xlim([np.amin(mistilt_values_sorted), np.amax(mistilt_values_sorted)])
-        ax22.set_ylim([0, 1])
-        ax22.set_xlabel('Mistilt / mrad')
+        lineplot_tilt = ax1.plot(mistilt_values_sorted, mistilt_pred_sorted, linestyle='-', color='b', zorder=0)
+        scatter_1 = ax1.plot(mistilt_values_sorted[np.argmax(mistilt_pred_sorted)],
+                             mistilt_pred_sorted[np.argmax(mistilt_pred_sorted)], marker='o', color='r')
+        ax1.set_title('Mistilt Prediction')
+        ax1.set_xlim([np.amin(mistilt_values_sorted), np.amax(mistilt_values_sorted)])
+        ax1.set_ylim([0, 1])
+        ax1.set_xlabel('Mistilt / mrad')
 
-        # Plot simulated PACBEDs with predicted values
+        # Plot loaded PACBED
+        axs[0, 0].imshow(PACBED_measured)
+        axs[0, 0].set_title('Measured PACBED')
+        axs[0, 0].axis('off')
 
-        # Location of the simulated PACBEDs required
+        # Plot best matching simulated PACBED
 
-        # Get specific convergence angle for plotting (otherwise to many plots)
+        # Get convergenc angle
         conv_angle_unique = np.unique(self.dataframe['Conv_Angle'])
-        # Take middle convergence angle (if convergence angle is known, closest value can be taken)
-        conv_angle_plot = conv_angle_unique[len(conv_angle_unique)//2]
+        # Take the nearest simulated convergence angle
+        conv_angle_plot = self.find_nearest(conv_angle_unique, self.conv_angle)
 
-        # Filter dataframe for the predicted values (open value is azimuth)
-        filteredDataframe = self.dataframe[
-            (self.dataframe['Thickness'] == result['thickness_pred']) &
-            (self.dataframe['Mistilt'] == result['mistilt_pred']) &
-            (self.dataframe['Conv_Angle'] == conv_angle_plot)
-        ]
-        filteredDataframe = filteredDataframe.reset_index(drop=True)
+        # Get mistilt
+        mistilt_i = np.argmax(mistilt_pred_sorted)
+        mistilt = mistilt_values_sorted[mistilt_i]
 
-        # Plot simulated PACBEDs with different azimuth angle with the measured scaled PACBED
-        ax3 = []
+        # Get thickness
+        thickness_i = np.argmax(thickness_pred_sorted)
+        thickness = thickness_values_sorted[thickness_i]
 
-        for i in range(0, len(filteredDataframe)+2):
-            # Add subplot
-            ax3.append(fig3.add_subplot(np.ceil((len(filteredDataframe)+2)/4), 4, i+1))
+        path_img = self.create_path(self.dataframe, conv_angle_plot, thickness, mistilt, azimuth_i)
+        PACBED_sim = self.load_img(path_img)
 
-            # Plot measured scaled PACBED last
-            if i == len(filteredDataframe):
-                subplot_title = ('Measured PACBED')
-                ax3[-1].set_title(subplot_title, fontsize=12)
+        # Plot simulated PACBED
+        PACBED_sim_plot = axs[0, 1].imshow(PACBED_sim)
+        axs[0, 1].set_title('Simulated PACBED')
+        axs[0, 1].axis('off')
 
-                # Plot image
-                plt.imshow(self.PACBED_validate)
-                ax3[-1].axis('off')
+        # Add text
+        props = dict(boxstyle='round', facecolor='lightblue', alpha=0.5)
+        textstr = r'Thickness = %.1f nm  ' % (thickness / 10,) + r'Mistilt = %.0f mrad  ' % (
+        mistilt,) + r'Conv = %.0f mrad' % (conv_angle_plot,)
 
-            # Plot predicted values
-            elif i == len(filteredDataframe) + 1:
-                ax3[-1].set_axis_off()
-                ax3[-1].text(
-                    0.1, 0.8,
-                    'Parameters for simulated PACBEDs:',
-                    fontsize=16, weight='bold'
-                )
-                ax3[-1].text(0.2, 0.6, f'Thickness: {result["thickness_pred"]/10} nm', fontsize=16)
-                ax3[-1].text(0.2, 0.4, f'Mistilt: {result["mistilt_pred"]} mrad', fontsize=16)
-                ax3[-1].text(0.2, 0.2, f'Conv. angle: {conv_angle_plot} mrad', fontsize=16)
+        text = fig.text(0.5, 0.63, textstr, fontsize=14, horizontalalignment='center', verticalalignment='top',
+                        bbox=props)
 
-            # Plot simulated PACBEDs
-            else:
-                subplot_title = (f'Azimuth {filteredDataframe["Azimuth"][i]} mrad')
-                ax3[-1].set_title(subplot_title, fontsize=12)
-                raw_path = filteredDataframe['Path'][i]
-                # A hack since absolute paths are in the database
-                prefix = 'D:/Post Processing/PACBED/PACBED_CNN/Rutile_80kV/Images/'
-                assert raw_path[:len(prefix)] == prefix
-                identifier = raw_path[len(prefix):]
-                identifier = identifier.replace('\\', '/')
+        fig.tight_layout()
 
-                path = os.path.join(self.simulation_path, identifier)
-
-                # Load image
-                img_sim = Image.open(path)
-                img_sim_arr = np.array(img_sim)
-                if len(img_sim_arr.shape) == 2:
-                    img_sim_arr = img_sim_arr[:, :, np.newaxis]
-                img_sim_arr = tf.image.central_crop(img_sim_arr, central_fraction=0.5)
-
-                img_arr_sim_plot = img_sim_arr[:, :, 0]
-
-                # Plot image
-                plt.imshow(img_arr_sim_plot)
-                ax3[-1].axis('off')
         f = io.BytesIO()
         plt.savefig(f, format='png')
         plt.close(fig)
         return f
+
+    def filter_df(self, df, thickness, mistilt, conv):
+        # Filter dataframe for the predicted values (open value is azimuth)
+        filteredDataframe = df[
+            (df['Thickness'] == thickness) &
+            (df['Mistilt'] == mistilt) &
+            (df['Conv_Angle'] == conv)
+            ]
+        # filteredDataframe.sort_values(by=['Azimuth'])
+
+        filteredDataframe_sorted = filteredDataframe.sort_values(['Azimuth'], ascending=[True])
+
+        return filteredDataframe_sorted.reset_index(drop=True)
+
+    def find_nearest(self, array, value):
+        array = np.asarray(array)
+        idx = (np.abs(array - value)).argmin()
+        if idx.size > 1:
+            return array[idx][0]
+        else:
+            return array[idx]
+
+    def create_path(self, df, conv_plot, thickness, mistilt, azimuth_i=0):
+
+        filteredDataframe = self.filter_df(df, thickness, mistilt, conv_plot)
+
+        path = filteredDataframe.iloc[azimuth_i]['Path']
+
+        return path
+
+    def load_img(self, path):
+        # Load image
+        img_sim = Image.open(path)
+
+        img_sim_arr = np.array(img_sim)
+        if len(img_sim_arr.shape) > 2:
+            img_sim_arr = img_sim_arr[:, :, 0]
+
+        return img_sim_arr
