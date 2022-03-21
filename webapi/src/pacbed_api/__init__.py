@@ -3,6 +3,7 @@ import asyncio
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form
 from pydantic.types import Json
+import pandas as pd
 import base64
 
 from . import schemas
@@ -20,13 +21,22 @@ async def root():
 
 # Select folder with CNN models and labels for a specific system by its ID from Register.csv
 parameters_prediction = {
-    'id_system' : 0, # Id for the system from the register
-    'id_model' : 0, # Model Id from the specific system model register
-    'conv_angle' : 20.0 # Used convergence angle for recording the measured PACBED
+    'id_model': 0,  # Model Id from the specific system model register
+    'conv_angle': 20.0  # Used convergence angle for recording the measured PACBED
     }
 
-predictor = Predictor(parameters_prediction
-)
+predictors = {}
+
+
+def load_models():
+    df_system = pd.read_csv('./data/Register.csv', sep=';', index_col='id')
+    for index, row in df_system[['material']].iterrows():
+        params = parameters_prediction.copy()
+        params['id_system'] = index
+        predictors[row['material']] = Predictor(params)
+
+
+load_models()
 
 
 async def sync_to_async(fn, pool=None, *args, **kwargs):
@@ -64,7 +74,7 @@ async def inference(
     pp = parameters.physical_params
     assert pp.acceleration_voltage == 80000
     assert pp.zone_axis == schemas.ZoneAxis(u=0, v=0, w=1)
-    assert pp.crystal_structure == "Rutile"
+    predictor = predictors[pp.crystal_structure]
     assert np.allclose(pp.convergence_angle, 20)
     pattern = np.frombuffer(file.file.read(), dtype=parameters.dtype).reshape(
         (parameters.height, parameters.width)
