@@ -6,7 +6,9 @@ import base64
 import io
 
 
-def query(image_array, host='localhost', port=8010):
+def query(image_array, crystal_structure='Rutile', acceleration_voltage=80000,
+          convergence_angle=20, zone_u=0, zone_v=0, zone_w=1,
+          host='localhost', port=8010):
     resp = requests.post(f"http://{host}:{port}/inference/", files={
         "file": ("pacbed.raw", bytes(image_array), "application/octet-stream"),
         "parameters": (None, json.dumps({
@@ -14,10 +16,10 @@ def query(image_array, host='localhost', port=8010):
             "width": image_array.shape[1],
             "height": image_array.shape[0],
             "physical_params": {
-                "acceleration_voltage": 80000,
-                "zone_axis": {"u": 0, "v": 0, "w": 1},
-                "crystal_structure": "Rutile",
-                "convergence_angle": 20,
+                "acceleration_voltage": acceleration_voltage,
+                "zone_axis": {"u": zone_u, "v": zone_v, "w": zone_w},
+                "crystal_structure": crystal_structure,
+                "convergence_angle": convergence_angle,
             }
         }), "application/json"),
     }, )

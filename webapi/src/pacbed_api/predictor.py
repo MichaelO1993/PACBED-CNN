@@ -34,6 +34,7 @@ if tf.test.gpu_device_name():
 else:
     print("No GPU used or found")
 
+
 def background_subtraction(pacbed_img):
     # Subtract Background (improves prediction at larger thicknesses)
     background = np.mean(pacbed_img) / 4
@@ -171,42 +172,55 @@ class Predictor:
         self.load_files()
 
     def get_path(self, id_system, id_model):
-        df_system = pd.read_csv('.\\data\\Register.csv', sep=';', index_col='id')
+        df_system = pd.read_csv('./data/Register.csv', sep=';', index_col='id')
         print('Loaded system:')
         print(df_system.loc[[id_system]])  # double brackets to keep in the dataframe format
-
-        df_model = pd.read_csv(os.path.join(df_system.loc[id_system]['path'], 'models', 'Register_models.csv'), sep=';',
+        path = df_system.loc[id_system]['path']
+        path = path.replace('\\', '/')
+        df_model = pd.read_csv(os.path.join(path, 'models', 'Register_models.csv'), sep=';',
                                index_col='id')
         print('Loaded model:')
         print(df_model.loc[[id_model]])
 
-        Path_models = df_model.loc[id_model]['path']
-        Path_dataframe = os.path.join(df_system.loc[id_system]['path'], 'simulation', 'df.csv')
+        Path_models = df_model.loc[id_model]['path'].replace('\\', '/')
+        Path_dataframe = os.path.join(path, 'simulation', 'df.csv')
 
         return Path_models, Path_dataframe
 
     def load_files(self):
         # Get all filenames of models and labels
-        model_names = [os.path.basename(x) for x in glob.glob(os.path.join(self.Path_models, '*.tflite'))]
-        labels_names = [os.path.basename(x) for x in glob.glob(os.path.join(self.Path_models, '*_labels.csv'))]
+        model_names = [
+            os.path.basename(x)
+            for x in glob.glob(os.path.join(self.Path_models, '*.tflite'))
+        ]
+        labels_names = [
+            os.path.basename(x)
+            for x in glob.glob(os.path.join(self.Path_models, '*_labels.csv'))
+        ]
 
         # Load all models to the correct variable
         for model_name in model_names:
             if model_name.find('Scale') > -1:
                 # Tensorflow lite framework
-                self.interpreter_scale = tf.lite.Interpreter(model_path=os.path.join(self.Path_models, model_name))
+                self.interpreter_scale = tf.lite.Interpreter(
+                    model_path=os.path.join(self.Path_models, model_name)
+                )
                 self.interpreter_scale.allocate_tensors()
                 self.scale_input_details = self.interpreter_scale.get_input_details()
                 self.scale_output_details = self.interpreter_scale.get_output_details()
             elif model_name.find('Thickness') > -1:
                 # Tensorflow lite framework
-                self.interpreter_thickness = tf.lite.Interpreter(model_path=os.path.join(self.Path_models, model_name))
+                self.interpreter_thickness = tf.lite.Interpreter(
+                    model_path=os.path.join(self.Path_models, model_name)
+                )
                 self.interpreter_thickness.allocate_tensors()
                 self.thickness_input_details = self.interpreter_thickness.get_input_details()
                 self.thickness_output_details = self.interpreter_thickness.get_output_details()
             elif model_name.find('Mistilt') > -1:
                 # Tensorflow lite framework
-                self.interpreter_tilt = tf.lite.Interpreter(model_path=os.path.join(self.Path_models, model_name))
+                self.interpreter_tilt = tf.lite.Interpreter(
+                    model_path=os.path.join(self.Path_models, model_name)
+                )
                 self.interpreter_tilt.allocate_tensors()
                 self.tilt_input_details = self.interpreter_tilt.get_input_details()
                 self.tilt_output_details = self.interpreter_tilt.get_output_details()
@@ -217,11 +231,17 @@ class Predictor:
         # Load all models to the correct variable
         for label_name in labels_names:
             if label_name.find('Scale') > -1:
-                self.label_scale = pd.read_csv(os.path.join(self.Path_models, label_name), sep=';')
+                self.label_scale = pd.read_csv(
+                    os.path.join(self.Path_models, label_name), sep=';'
+                )
             elif label_name.find('Thickness') > -1:
-                self.label_thickness = pd.read_csv(os.path.join(self.Path_models, label_name), sep=';')
+                self.label_thickness = pd.read_csv(
+                    os.path.join(self.Path_models, label_name), sep=';'
+                )
             elif label_name.find('Mistilt') > -1:
-                self.label_mistilt = pd.read_csv(os.path.join(self.Path_models, label_name), sep=';')
+                self.label_mistilt = pd.read_csv(
+                    os.path.join(self.Path_models, label_name), sep=';'
+                )
 
                 # Load dataframe (csv-file with out index)
         self.dataframe = pd.read_csv(self.Path_dataframe, sep=';')
@@ -243,7 +263,7 @@ class Predictor:
         # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
         img_CNN, img_scaling = self.rescale_resize(self.pacbed_measured, 1, self.dim)
 
-        if scale_const == None:
+        if scale_const is None:
             # Iterative scaling of the image by CNN
             k = 0
             scale_total = 1
@@ -253,13 +273,19 @@ class Predictor:
                 img_CNN = np.tile(img_CNN, (1, 1, 3))
 
                 # Input PACBED and normalized convergence angle in the correct format
-                self.interpreter_scale.set_tensor(self.scale_input_details[0]['index'],
-                                                  self.conv_angle_norm[np.newaxis][np.newaxis, :])
-                self.interpreter_scale.set_tensor(self.scale_input_details[1]['index'], img_CNN[np.newaxis, :, :, :])
+                self.interpreter_scale.set_tensor(
+                    self.scale_input_details[0]['index'],
+                    self.conv_angle_norm[np.newaxis][np.newaxis, :]
+                )
+                self.interpreter_scale.set_tensor(
+                    self.scale_input_details[1]['index'], img_CNN[np.newaxis, :, :, :]
+                )
 
                 # Interfere and make prediction
                 self.interpreter_scale.invoke()
-                scale_prediction = self.interpreter_scale.get_tensor(self.scale_output_details[0]['index'])
+                scale_prediction = self.interpreter_scale.get_tensor(
+                    self.scale_output_details[0]['index']
+                )
 
                 # Get scaling value with the highest predicted value
                 new_scale_pred = self.label_scale['Scale / []'][np.argmax(scale_prediction)]
@@ -267,12 +293,15 @@ class Predictor:
                 # Damp prediction to avoid oscillating
                 scale_pred = (k * scale_pred + (10 - k) * new_scale_pred) / 10
 
-                # Break loop conditions if maximum iteration is reached or prediction output is too small
+                # Break loop conditions if maximum iteration is reached or
+                # prediction output is too small
                 if k > 10 or np.amax(scale_prediction) < 0.5:
                     break
                     # raise RuntimeError("Could not predict scale")
                 else:
-                    img_CNN, img_scaling = self.rescale_resize(img_scaling, scale_pred, self.dim[0:2])
+                    img_CNN, img_scaling = self.rescale_resize(
+                        img_scaling, scale_pred, self.dim[0:2]
+                    )
                     # Loop counter
                     k += 1
                     scale_total *= scale_pred
@@ -335,21 +364,31 @@ class Predictor:
 
         # Interfere and make prediction
         self.interpreter_thickness.invoke()
-        thickness_cnn_output = self.interpreter_thickness.get_tensor(self.thickness_output_details[0]['index'])
+        thickness_cnn_output = self.interpreter_thickness.get_tensor(
+            self.thickness_output_details[0]['index']
+        )
 
         # Get thickness value with the highest predicted value
-        thickness_predicted = self.label_thickness['Thickness / A'][np.argmax(thickness_cnn_output)]
+        thickness_predicted = self.label_thickness['Thickness / A'][
+            np.argmax(thickness_cnn_output)
+        ]
 
         # Make mistilt prediction
 
         # Set input for CNN
-        self.interpreter_tilt.set_tensor(self.scale_input_details[0]['index'],
-                                         self.conv_angle_norm[np.newaxis][np.newaxis, :])
-        self.interpreter_tilt.set_tensor(self.scale_input_details[1]['index'], self.PACBED_scaled[np.newaxis, :, :, :])
+        self.interpreter_tilt.set_tensor(
+            self.scale_input_details[0]['index'],
+            self.conv_angle_norm[np.newaxis][np.newaxis, :]
+        )
+        self.interpreter_tilt.set_tensor(
+            self.scale_input_details[1]['index'], self.PACBED_scaled[np.newaxis, :, :, :]
+        )
 
         # Interfere and make prediction
         self.interpreter_tilt.invoke()
-        mistilt_cnn_output = self.interpreter_tilt.get_tensor(self.tilt_output_details[0]['index'])
+        mistilt_cnn_output = self.interpreter_tilt.get_tensor(
+            self.tilt_output_details[0]['index']
+        )
 
         # Get mistilt value with the highest predicted value
         mistilt_predicted = self.label_mistilt['Mistilt / mrad'][np.argmax(mistilt_cnn_output)]
@@ -365,7 +404,9 @@ class Predictor:
     def validate(self, result, PACBED_measured, azimuth_i=0):
 
         # Create figure with special subplots
-        fig, axs = plt.subplots(ncols=2, nrows=3, figsize=(8, 10), gridspec_kw={'height_ratios': [1.5, 1, 1]})
+        fig, axs = plt.subplots(
+            ncols=2, nrows=3, figsize=(8, 10), gridspec_kw={'height_ratios': [1.5, 1, 1]}
+        )
         # Modifying subplots
 
         # First row
@@ -393,19 +434,30 @@ class Predictor:
         mistilt_values_sorted = np.array(self.label_mistilt.iloc[:, 0][mistilt_sort_ind])
 
         # Plot output of thickness prediction
-        lineplot_thick = ax2.plot(thickness_values_sorted / 10, thickness_pred_sorted, linestyle='-', color='b',
-                                  zorder=0)
-        scatter_2 = ax2.plot(thickness_values_sorted[np.argmax(thickness_pred_sorted)] / 10,
-                             thickness_pred_sorted[np.argmax(thickness_pred_sorted)], marker='o', color='r')
+        lineplot_thick = ax2.plot(
+            thickness_values_sorted / 10, thickness_pred_sorted, linestyle='-',
+            color='b', zorder=0
+        )
+        scatter_2 = ax2.plot(
+            thickness_values_sorted[np.argmax(thickness_pred_sorted)] / 10,
+            thickness_pred_sorted[np.argmax(thickness_pred_sorted)], marker='o', color='r'
+        )
         ax2.set_title('Thickness Prediction')
-        ax2.set_xlim([np.amin(thickness_values_sorted) / 10, np.amax(thickness_values_sorted) / 10])
+        ax2.set_xlim([
+            np.amin(thickness_values_sorted) / 10,
+            np.amax(thickness_values_sorted) / 10
+        ])
         ax2.set_ylim([0, 1])
         ax2.set_xlabel('Thickness / nm')
 
         # Plot output of mistilt prediction
-        lineplot_tilt = ax1.plot(mistilt_values_sorted, mistilt_pred_sorted, linestyle='-', color='b', zorder=0)
-        scatter_1 = ax1.plot(mistilt_values_sorted[np.argmax(mistilt_pred_sorted)],
-                             mistilt_pred_sorted[np.argmax(mistilt_pred_sorted)], marker='o', color='r')
+        lineplot_tilt = ax1.plot(
+            mistilt_values_sorted, mistilt_pred_sorted, linestyle='-', color='b', zorder=0
+        )
+        scatter_1 = ax1.plot(
+            mistilt_values_sorted[np.argmax(mistilt_pred_sorted)],
+            mistilt_pred_sorted[np.argmax(mistilt_pred_sorted)], marker='o', color='r'
+        )
         ax1.set_title('Mistilt Prediction')
         ax1.set_xlim([np.amin(mistilt_values_sorted), np.amax(mistilt_values_sorted)])
         ax1.set_ylim([0, 1])
@@ -441,11 +493,16 @@ class Predictor:
 
         # Add text
         props = dict(boxstyle='round', facecolor='lightblue', alpha=0.5)
-        textstr = r'Thickness = %.1f nm  ' % (thickness / 10,) + r'Mistilt = %.0f mrad  ' % (
-        mistilt,) + r'Conv = %.0f mrad' % (conv_angle_plot,)
+        textstr = (
+            r'Thickness = %.1f nm  ' % (thickness / 10,) +
+            r'Mistilt = %.0f mrad  ' % (mistilt,) +
+            r'Conv = %.0f mrad' % (conv_angle_plot,)
+        )
 
-        text = fig.text(0.5, 0.63, textstr, fontsize=14, horizontalalignment='center', verticalalignment='top',
-                        bbox=props)
+        text = fig.text(
+            0.5, 0.63, textstr, fontsize=14, horizontalalignment='center',
+            verticalalignment='top', bbox=props
+        )
 
         fig.tight_layout()
 
@@ -479,7 +536,7 @@ class Predictor:
 
         filteredDataframe = self.filter_df(df, thickness, mistilt, conv_plot)
 
-        path = filteredDataframe.iloc[azimuth_i]['Path']
+        path = filteredDataframe.iloc[azimuth_i]['Path'].replace('\\', '/')
 
         return path
 
