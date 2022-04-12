@@ -11,7 +11,10 @@ Class MyDialog: UIFrame
     { 
     DialogTG = DLGCreateDialog("AutoPACBED") 
     choCrystal  = DLGCreateChoice(choCrystal_Items,0) // StringField("TiO2 rutile",20)
-    choCrystal.DLGAddChoiceItemEntry("TiO2 rutile",1)
+	choCrystal.DLGAddChoiceItemEntry("Rutile",1)
+    choCrystal.DLGAddChoiceItemEntry("Strontium titanate",1)
+    choCrystal.DLGAddChoiceItemEntry("Rutile_200",1)
+    
     //MyRealField    = DLGCreateRealField(10.2,10,2).DLGAnchor("East") 
     //MyIntegerField = DLGCreateIntegerField(5,10).DLGAnchor("West") 
     txtOrientation_u = DLGCreateIntegerField(0,4)
@@ -26,7 +29,7 @@ Class MyDialog: UIFrame
     lblConva	   = DLGCreateLabel("Conv. angle [mrad]:").DLGAnchor("West")  
     lblGetPACBED   = DLGCreateLabel("...",40).DLGIdentifier("#PACBEDName").DLGAnchor("Center")  
     txtHT          = DLGCreateRealField(80,10,2).DLGIdentifier("#HTValueInput") 
-    txtConva       = DLGCreateRealField(20.8,10,2) 
+    txtConva       = DLGCreateRealField(20.0,10,2) 
     cmdCalcThickness = DLGCreatePushButton("Determine Thickness","CalcThicknessButton").DLGIdentifier("#Calc")
     dlgenabled(cmdCalcThickness,0) 
     lblThickness   = DLGCreateLabel("Thickness value: ...").DLGIdentifier("#Thickness").DLGAnchor("East") 
@@ -104,8 +107,14 @@ Class MyDialog: UIFrame
 	number imgid = img.ImageGetID()
 	number ht_entered = txtHT.DLGGetStringValue().val()*1000 //self.LookUpElement("#HTValueInput")
 	
+	string material
+	choCrystal.DLGGetNthLabel( choCrystal.DLGGetValue(), material )
+	
+	number convergence_angle = txtConva.DLGGetStringValue().val()
+	
+	
 	string pyScript = "from pacbedclient import imagefromresponse, query, arrayfromID; "
-	pyScript += "imagefromresponse(DM, query(arrayfromID(DM, " + imgid + "), host='localhost', port=8000,ht=" + ht_entered + ",))\n"
+	pyScript += "imagefromresponse(DM, query(arrayfromID(DM, " + imgid + "), host='localhost', port=8000,acceleration_voltage=" + ht_entered + ",crystal_structure='" + material + "', convergence_angle = " + convergence_angle +"))\n"
 	ExecutePythonScriptString( pyScript, 1) // remove 1 if error 'An image with given name cannot be found'
 
 	//number nImg = CountImages()
