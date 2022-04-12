@@ -11,6 +11,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 
+from skimage.registration import phase_cross_correlation
+from skimage.transform import warp_polar, rotate, rescale
+
+from scipy.ndimage import zoom
 
 # Use GPU
 gpu = False
@@ -35,9 +39,15 @@ else:
     print("No GPU used or found")
 
 
-def background_subtraction(pacbed_img):
+def background_subtraction(pacbed_img, border = 0.1):
     # Subtract Background (improves prediction at larger thicknesses)
-    background = np.mean(pacbed_img) / 4
+    pacbed_background = pacbed_img.copy()
+    border_px_x = int(border * pacbed_background.shape[0])
+    border_px_y = int(border * pacbed_background.shape[1])
+    pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y] = 0
+    background = np.sum(pacbed_background)/(pacbed_background.size - border_px_x*border_px_y)
+
+    #background = np.mean(pacbed_img) / 4 # The higher the noise the larger the background should be
     pacbed_background_sub = pacbed_img - background
     pacbed_background_sub[pacbed_background_sub <= 0] = 0
 
@@ -105,7 +115,7 @@ def redim_PACBED(pacbed_img, dim=(680, 680)):
     PACBED_img = Image.fromarray(pacbed_img)
 
     # Resize
-    PACBED_img = PACBED_img.resize(dim, resample=Image.BICUBIC)
+    PACBED_img = PACBED_img.resize(dim, resample=Image.NEAREST)
 
     # Normalize for CNN
     PACBED_arr = np.asarray(PACBED_img)
@@ -248,6 +258,16 @@ class Predictor:
 
         print('Models and Labels loaded.')
 
+    def input_tensor_idx(self, input_details):
+        if len(input_details[0]['shape']) == 4:
+            idx_pacbed = 0
+            idx_conv = 1
+        else:
+            idx_pacbed = 1
+            idx_conv = 0
+
+        return idx_pacbed, idx_conv
+
     def set_input(self, pacbed_measured, conv_angle):
         # Measured PACBED
         self.pacbed_measured = pacbed_measured[:, :, np.newaxis]
@@ -263,6 +283,8 @@ class Predictor:
         # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
         img_CNN, img_scaling = self.rescale_resize(self.pacbed_measured, 1, self.dim)
 
+        idx_pacbed, idx_conv = self.input_tensor_idx(self.scale_input_details)
+
         if scale_const is None:
             # Iterative scaling of the image by CNN
             k = 0
@@ -274,11 +296,11 @@ class Predictor:
 
                 # Input PACBED and normalized convergence angle in the correct format
                 self.interpreter_scale.set_tensor(
-                    self.scale_input_details[0]['index'],
+                    self.scale_input_details[idx_conv]['index'],
                     self.conv_angle_norm[np.newaxis][np.newaxis, :]
                 )
                 self.interpreter_scale.set_tensor(
-                    self.scale_input_details[1]['index'], img_CNN[np.newaxis, :, :, :]
+                    self.scale_input_details[idx_pacbed]['index'], img_CNN[np.newaxis, :, :, :]
                 )
 
                 # Interfere and make prediction
@@ -291,11 +313,11 @@ class Predictor:
                 new_scale_pred = self.label_scale['Scale / []'][np.argmax(scale_prediction)]
 
                 # Damp prediction to avoid oscillating
-                scale_pred = (k * scale_pred + (10 - k) * new_scale_pred) / 10
+                scale_pred = (k * scale_pred + (5 - k) * new_scale_pred) / 5
 
                 # Break loop conditions if maximum iteration is reached or
                 # prediction output is too small
-                if k > 10 or np.amax(scale_prediction) < 0.5:
+                if k > 5 or np.amax(scale_prediction) < 0.5:
                     break
                     # raise RuntimeError("Could not predict scale")
                 else:
@@ -357,9 +379,10 @@ class Predictor:
         # Make thickness prediction
 
         # Set input for CNN
-        self.interpreter_thickness.set_tensor(self.scale_input_details[0]['index'],
+        idx_pacbed, idx_conv = self.input_tensor_idx(self.thickness_input_details)
+        self.interpreter_thickness.set_tensor(self.scale_input_details[idx_conv]['index'],
                                               self.conv_angle_norm[np.newaxis][np.newaxis, :])
-        self.interpreter_thickness.set_tensor(self.scale_input_details[1]['index'],
+        self.interpreter_thickness.set_tensor(self.scale_input_details[idx_pacbed]['index'],
                                               self.PACBED_scaled[np.newaxis, :, :, :])
 
         # Interfere and make prediction
@@ -376,12 +399,13 @@ class Predictor:
         # Make mistilt prediction
 
         # Set input for CNN
+        idx_pacbed, idx_conv = self.input_tensor_idx(self.tilt_input_details)
         self.interpreter_tilt.set_tensor(
-            self.scale_input_details[0]['index'],
+            self.scale_input_details[idx_conv]['index'],
             self.conv_angle_norm[np.newaxis][np.newaxis, :]
         )
         self.interpreter_tilt.set_tensor(
-            self.scale_input_details[1]['index'], self.PACBED_scaled[np.newaxis, :, :, :]
+            self.scale_input_details[idx_pacbed]['index'], self.PACBED_scaled[np.newaxis, :, :, :]
         )
 
         # Interfere and make prediction
