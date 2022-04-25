@@ -1,23 +1,44 @@
+from os.path import join, normpath, abspath, dirname
+import base64
 import functools
 import asyncio
+
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from pydantic.types import Json
 import pandas as pd
-import base64
+from ncempy.io.dm import fileDM
 
 from . import schemas
 from .predictor import Predictor
 
 app = FastAPI()
 
+BASE_DIR = normpath(abspath(dirname(__file__)))
+
+print(f"{BASE_DIR}")
+
+app.mount("/static", StaticFiles(directory=join(BASE_DIR, "static")), name="static")
+templates = Jinja2Templates(directory=join(BASE_DIR, "templates"))
+
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """
     Returns the basic web form for uploading PACBED patterns to be analysed
     """
-    return {"message": "Hello world!"}
+    crystal_structures = predictors.keys()
+
+    return templates.TemplateResponse(
+        "form.html",
+        {
+            "request": request,
+            "crystal_structures": crystal_structures,
+        }
+    )
+
 
 # Select folder with CNN models and labels for a specific system by its ID from Register.csv
 parameters_prediction = {
@@ -59,6 +80,12 @@ async def sync_to_async(fn, pool=None, *args, **kwargs):
     return await loop.run_in_executor(pool, fn)
 
 
+def get_pattern_from_dm(file):
+    with fileDM(file.file) as dmf:
+        ds = dmf.getDataset(0)
+        return ds['data']
+
+
 # Json typing of `parameters` form param:
 # https://github.com/tiangolo/fastapi/issues/2387#issuecomment-906761427
 @app.post("/inference/")
@@ -76,9 +103,17 @@ async def inference(
     assert pp.zone_axis == schemas.ZoneAxis(u=0, v=0, w=1)
     predictor = predictors[pp.crystal_structure]
     assert np.allclose(pp.convergence_angle, 20)
-    pattern = np.frombuffer(file.file.read(), dtype=parameters.dtype).reshape(
-        (parameters.height, parameters.width)
-    )
+
+    fp = parameters.file_params
+    if fp.typ == "dm4":
+        pattern = await sync_to_async(get_pattern_from_dm, None, file.file)
+    elif fp.typ == "raw":
+        dtype = fp.dtype
+        width = fp.width
+        height = fp.height
+        pattern = np.frombuffer(await sync_to_async(file.file.read), dtype=dtype).reshape(
+            (height, width)
+        )
     # pattern = np.zeros((parameters.height, parameters.width), dtype=np.float32)
     result = await sync_to_async(predictor.predict, None, pattern)
     validation = await sync_to_async(predictor.validate, None, result, pattern)

@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Literal, Union
 
 from pydantic import BaseModel
 
@@ -36,16 +37,25 @@ class DType(str, Enum):
     float64 = "float64"
 
 
-class InferenceParameters(BaseModel):
-    physical_params: PACBEDAnalysisParams
+class RawParams(BaseModel):
+    typ: Literal['raw']
     dtype: DType
     width: int
     height: int
 
 
+class DM4Params(BaseModel):
+    typ: Literal['dm4']
+
+
+class InferenceParameters(BaseModel):
+    physical_params: PACBEDAnalysisParams
+    file_params: Union[RawParams, DM4Params]
+
+
 class InferenceResults(BaseModel):
-    thickness: float  # in Angstrom?
-    mistilt: float  # mrad?
+    thickness: float  # in Angstrom
+    mistilt: float  # mrad
     scale: float  # unitless?
     validation: str
     # TODO: include confidence of prediction?
