@@ -18,8 +18,6 @@ app = FastAPI()
 
 BASE_DIR = normpath(abspath(dirname(__file__)))
 
-print(f"{BASE_DIR}")
-
 app.mount("/static", StaticFiles(directory=join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=join(BASE_DIR, "templates"))
 
@@ -81,7 +79,7 @@ async def sync_to_async(fn, pool=None, *args, **kwargs):
 
 
 def get_pattern_from_dm(file):
-    with fileDM(file.file) as dmf:
+    with fileDM(file) as dmf:
         ds = dmf.getDataset(0)
         return ds['data']
 
