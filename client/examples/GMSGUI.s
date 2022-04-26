@@ -118,11 +118,16 @@ Class MyDialog: UIFrame
 	
 	number convergence_angle = txtConva.DLGGetStringValue().val()
 	
-  string pyScript = "from pacbedclient import imagefromresponse, query, arrayfromID; "
-  pyScript += "imagefromresponse(DM, query(image_array=arrayfromID(DM, " + imgid + "), "
-  pyScript += "crystal_structure='" + material + "', acceleration_voltage=" + ht_entered + ", "
-  pyScript += "convergence_angle=" + convergence_angle + ", zone_u=0, zone_v=0, zone_w=1, "
-  pyScript += "host='" + host + "', port=" + port + "))"
+	number zone_u_value = txtOrientation_u.DLGGetStringValue().val()
+	number zone_v_value = txtOrientation_v.DLGGetStringValue().val()
+	number zone_w_value = txtOrientation_w.DLGGetStringValue().val()
+	
+  	string pyScript = "from pacbedclient import imagefromresponse, query, arrayfromID; "
+  	pyScript += "imagefromresponse(DM, query(image_array=arrayfromID(DM, " + imgid + "), "
+  	pyScript += "crystal_structure='" + material + "', acceleration_voltage=" + ht_entered + ", "
+  	pyScript += "convergence_angle=" + convergence_angle + ", "
+	pyScript += "zone_u=" + zone_u_value + ", zone_v=" + zone_v_value + ", zone_w=" + zone_w_value + ", "
+  	pyScript += "host='" + host + "', port=" + port + "))"
 
 	ExecutePythonScriptString( pyScript, 1) // remove 1 if error 'An image with given name cannot be found'
 
