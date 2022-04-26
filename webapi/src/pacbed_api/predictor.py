@@ -1,6 +1,7 @@
 import glob
 import os
 import io
+import threading
 
 # from ncempy.io import dm
 import numpy as np
@@ -141,7 +142,7 @@ def show(pacbed_raw, pacbed_processed):
 
 
 class Predictor:
-    def __init__(self, parameters_prediction):
+    def __init__(self, parameters_prediction, num_threads):
         # Declare variables
         self.id_system = parameters_prediction['id_system']
         self.id_model = parameters_prediction['id_model']
@@ -150,18 +151,16 @@ class Predictor:
         self.conv_angle_norm = None
         self.dataframe = None
         self.dim = None
+
+        self.interpreters = threading.local()
+        self.num_threads = num_threads
+
         # Scale CNN
-        self.interpreter_scale = None
-        self.scale_input_details = None
-        self.scale_output_details = None
+        self._scale_path = None
         # Thickness CNN
-        self.interpreter_thickness = None
-        self.thickness_input_details = None
-        self.thickness_output_details = None
+        self._thickness_path = None
         # Mistilt CNN
-        self.interpreter_tilt = None
-        self.tilt_input_details = None
-        self.tilt_output_details = None
+        self._tilt_path = None
         # Labels
         self.label_scale = None
         self.label_thickness = None
@@ -189,6 +188,51 @@ class Predictor:
 
         return Path_models, Path_dataframe
 
+    def _get_or_create_interp(self, name, path):
+        if not hasattr(self.interpreters, name):
+            interp = tf.lite.Interpreter(
+                model_path=path, num_threads=self.num_threads,
+            )
+            interp.allocate_tensors()
+            setattr(self.interpreters, name, interp)
+        return getattr(self.interpreters, name)
+
+    @property
+    def interpreter_scale(self) -> tf.lite.Interpreter:
+        return self._get_or_create_interp("scale", self._scale_path)
+
+    @property
+    def scale_input_details(self):
+        return self.interpreter_scale.get_input_details()
+
+    @property
+    def scale_output_details(self):
+        return self.interpreter_scale.get_output_details()
+
+    @property
+    def interpreter_thickness(self) -> tf.lite.Interpreter:
+        return self._get_or_create_interp("thickness", self._thickness_path)
+
+    @property
+    def thickness_input_details(self):
+        return self.interpreter_thickness.get_input_details()
+
+    @property
+    def thickness_output_details(self):
+        return self.interpreter_thickness.get_output_details()
+
+    @property
+    def interpreter_tilt(self) -> tf.lite.Interpreter:
+        return self._get_or_create_interp("tilt", self._tilt_path)
+
+    @property
+    def tilt_input_details(self):
+        return self.interpreter_tilt.get_input_details()
+
+    @property
+    def tilt_output_details(self):
+        return self.interpreter_tilt.get_output_details()
+
     def load_files(self):
         # Get all filenames of models and labels
         model_names = [
@@ -203,31 +247,13 @@ class Predictor:
         # Load all models to the correct variable
         for model_name in model_names:
             if model_name.find('Scale') > -1:
-                # Tensorflow lite framework
-                self.interpreter_scale = tf.lite.Interpreter(
-                    model_path=os.path.join(self.Path_models, model_name)
-                )
-                self.interpreter_scale.allocate_tensors()
-                self.scale_input_details = self.interpreter_scale.get_input_details()
-                self.scale_output_details = self.interpreter_scale.get_output_details()
+                self._scale_path = os.path.join(self.Path_models, model_name)
             elif model_name.find('Thickness') > -1:
-                # Tensorflow lite framework
-                self.interpreter_thickness = tf.lite.Interpreter(
-                    model_path=os.path.join(self.Path_models, model_name)
-                )
-                self.interpreter_thickness.allocate_tensors()
-                self.thickness_input_details = self.interpreter_thickness.get_input_details()
-                self.thickness_output_details = self.interpreter_thickness.get_output_details()
+                self._thickness_path = os.path.join(self.Path_models, model_name)
             elif model_name.find('Mistilt') > -1:
-                # Tensorflow lite framework
-                self.interpreter_tilt = tf.lite.Interpreter(
-                    model_path=os.path.join(self.Path_models, model_name)
-                )
-                self.interpreter_tilt.allocate_tensors()
-                self.tilt_input_details = self.interpreter_tilt.get_input_details()
-                self.tilt_output_details = self.interpreter_tilt.get_output_details()
+                self._tilt_path = os.path.join(self.Path_models, model_name)
 
-                # Extract required input dimension from the thickness CNN
+        # Extract required input dimension from the thickness CNN
         self.dim = self.thickness_input_details[1]['shape'][1:]
 
         # Load all models to the correct variable
