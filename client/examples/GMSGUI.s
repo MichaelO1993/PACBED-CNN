@@ -1,3 +1,9 @@
+// Full example for PACBED thickness workflow
+// in GMS
+
+string host = "localhost"
+int port = 8230
+
 Class MyDialog: UIFrame 
 { 
   MyDialog(Object self)  Result("\n Created #"  + self.ScriptObjectGetID().hex()) 
@@ -112,17 +118,13 @@ Class MyDialog: UIFrame
 	
 	number convergence_angle = txtConva.DLGGetStringValue().val()
 	
-	
-	string pyScript = "from pacbedclient import imagefromresponse, query, arrayfromID; "
-	pyScript += "imagefromresponse(DM, query(arrayfromID(DM, " + imgid + "), host='localhost', port=8000,acceleration_voltage=" + ht_entered + ",crystal_structure='" + material + "', convergence_angle = " + convergence_angle +"))\n"
-	ExecutePythonScriptString( pyScript, 1) // remove 1 if error 'An image with given name cannot be found'
+  string pyScript = "from pacbedclient import imagefromresponse, query, arrayfromID; "
+  pyScript += "imagefromresponse(DM, query(image_array=arrayfromID(DM, " + id + "), "
+  pyScript += "crystal_structure='" + material + "', acceleration_voltage=" + ht_entered + ", "
+  pyScript += "convergence_angle=" + convergence_angle + ", zone_u=0, zone_v=0, zone_w=1, "
+  pyScript += "host='" + host + "', port=" + port + "))"
 
-	//number nImg = CountImages()
-	//for ( number i = 0 ; i < nImg ; i ++ )
-	//{
-	// image img := FindImageByIndex(i)
-	// result(GetLabel( img ) + " " + GetName(img))
-	//}
+	ExecutePythonScriptString( pyScript, 1) // remove 1 if error 'An image with given name cannot be found'
 
 	image r_img := GetNamedImage("pacbed:viz_r")
 	image g_img := GetNamedImage("pacbed:viz_g")
