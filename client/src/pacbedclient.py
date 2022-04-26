@@ -12,9 +12,12 @@ def query(image_array, crystal_structure='Rutile', acceleration_voltage=80000,
     resp = requests.post(f"http://{host}:{port}/inference/", files={
         "file": ("pacbed.raw", bytes(image_array), "application/octet-stream"),
         "parameters": (None, json.dumps({
-            "dtype": str(image_array.dtype),
-            "width": image_array.shape[1],
-            "height": image_array.shape[0],
+            "file_params": {
+                "typ": "raw",
+                "dtype": str(image_array.dtype),
+                "width": image_array.shape[1],
+                "height": image_array.shape[0],
+            },
             "physical_params": {
                 "acceleration_voltage": acceleration_voltage,
                 "zone_axis": {"u": zone_u, "v": zone_v, "w": zone_w},

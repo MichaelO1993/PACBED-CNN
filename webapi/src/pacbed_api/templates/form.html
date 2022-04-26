@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+<head>
+<title>PACBED CNN</title>
+<!-- load MUI -->
+<link href="/static/mui-0.10.3/css/mui.min.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+    <div class="mui-container">
+        <h1>PACBED CNN</h1>
+        <p>
+            Select a DM4 file with a PACBED pattern and specify the metadata.
+            By clicking "Submit", the file is uploaded and a pre-trained
+            neuronal networks derives thickness and mistilt. Finally, rhe
+            result and validation information are displayed.
+        </p>
+        <p>
+            Pre-trained models are available for Rutile and Strontium titanate
+            along the &lt;0 0 1&gt; zone axis with and acceleration voltage of
+            80 kV and a convergence angle of 20 mrad for this demonstration.
+        </p>
+        <h2>DM4 file and metadata</h2>
+        <div class="mui-panel">
+            <form id="form" class="mui-form">
+                <div class="mui-textfield">
+                    <input type="file" name="file" required />
+                    <label>DM4 File</label>
+                </div>
+                <div class="mui-select">
+                    <select name="acceleration_voltage">
+                        <option value="80000">80000</option>
+                    </select>
+                    <label>Acceleration voltage</label>
+                </div>
+                <div class="mui-select">
+                    <select name="zone_axis">
+                        <option value="0 0 1">0 0 1</option>
+                    </select>
+                    <label>Zone axis</label>
+                </div>
+                <div class="mui-select">
+                    <select name="crystal_structure">
+                        {% for name in crystal_structures %}
+                        <option value="{{ name }}">{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                    <label>Crystal structure</label>
+                </div>
+                <div class="mui-select">
+                    <select name="convergence_angle">
+                        <option value="20">20</option>
+                    </select>
+                    <label>Convergence angle</label>
+                </div>
+                <p>
+                    <input id="submit" type="submit" value="Derive thickness and mistilt" class="mui-btn mui-btn--raised mui-btn--primary" />
+                </p>
+            </form>
+        </div>
+        <h2>Results</h2>
+        <div class="mui-panel" id="results">
+            Submit the form above to display results.
+        </div>
+    </div>
+    <script>
+    var form = document.getElementById("form");
+    form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        var file = form.elements.file.files[0];
+        if(!file) {
+            var messages = document.querySelector("#messages");
+            // TODO: show error
+            return;
+        }
+        var uvw = form.elements.zone_axis.value.split(" ").map((v) => parseInt(v));
+        var params = {
+            physical_params: {
+                acceleration_voltage: form.elements.acceleration_voltage.value,
+                convergence_angle: form.elements.convergence_angle.value,
+                zone_axis: {u: uvw[0], v: uvw[1], w: uvw[2]},
+                crystal_structure: form.elements.crystal_structure.value,
+            },
+            file_params: {typ: "dm4"},
+        };
+        var params_json = JSON.stringify(params);
+        var form_data = new FormData();
+        var dest = document.querySelector("#results");
+        form_data.append('parameters', params_json);
+        form_data.append('file', file);
+        console.log(params_json);
+        dest.innerHTML = `
+        Loading... <i class="spinner"></i>
+        `;
+
+        var submitbtn = document.querySelector("#submit");
+        submitbtn.disabled = true;
+
+        fetch('/inference/', {
+            method: 'POST',
+            body: form_data,
+        })
+        .then(response => response.json())
+        .then(result => {
+            submitbtn.disabled = false;
+            var result_html = `
+            <dl>
+                <dt>Thickness</dt><dd>${result.thickness} Å</dd>
+                <dt>Mistilt</dt><dd>${result.mistilt} mrad</dd>
+                <dt>Scale</dt><dd>${result.scale}</dd>
+                <dt>Validation</dt>
+                <dd><img src="data:image/png;base64,${result.validation}"/></dd>
+            </dl>
+            `;
+            dest.innerHTML = result_html;
+        })
+    });
+    </script>
+    <style>
+    .spinner::before {
+        content: "\23F3";
+    }
+    .spinner {
+        display: inline-block;
+
+        font-style: normal;
+
+        /* Increase font size to make it more appealing */
+        font-size: 5em;
+        
+        /* Add infinite rotation animation */
+        animation: rotation 5s infinite linear;
+    }
+
+    /* Specify rotation */
+    @keyframes rotation {
+        from {
+            transform: rotate(0deg);
+        }
+        
+        to {
+            transform: rotate(359deg);
+        }
+    }
+    </style>
+</body>
+</html>
