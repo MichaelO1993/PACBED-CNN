@@ -39,7 +39,7 @@ else:
     print("No GPU used or found")
 
 
-def background_subtraction(pacbed_img, border = 0.1):
+def background_subtraction(pacbed_img, border=0.1):
     # Subtract Background (improves prediction at larger thicknesses)
     pacbed_background = pacbed_img.copy()
     border_px_x = int(border * pacbed_background.shape[0])
@@ -47,7 +47,7 @@ def background_subtraction(pacbed_img, border = 0.1):
     pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y] = 0
     background = np.sum(pacbed_background)/(pacbed_background.size - border_px_x*border_px_y)
 
-    #background = np.mean(pacbed_img) / 4 # The higher the noise the larger the background should be
+    # background = np.mean(pacbed_img) / 4 # The higher the noise the larger the background should be
     pacbed_background_sub = pacbed_img - background
     pacbed_background_sub[pacbed_background_sub <= 0] = 0
 
@@ -119,8 +119,9 @@ def redim_PACBED(pacbed_img, dim=(680, 680)):
 
     # Normalize for CNN
     PACBED_arr = np.asarray(PACBED_img)
-    pacbed_img = (2 * PACBED_arr - np.amin(PACBED_arr) / (np.amax(PACBED_arr) - np.amin(PACBED_arr)) - 1).astype(
-        np.float32)
+    pacbed_img = (
+        2 * PACBED_arr - np.amin(PACBED_arr) / (np.amax(PACBED_arr) - np.amin(PACBED_arr)) - 1
+    ).astype(np.float32)
 
     print(f'PACBED dimensions changed to {dim}')
 
@@ -146,11 +147,9 @@ class Predictor:
         self.id_model = parameters_prediction['id_model']
         self.conv_angle = parameters_prediction['conv_angle']
 
-        self.pacbed_measured = None
         self.conv_angle_norm = None
         self.dataframe = None
         self.dim = None
-        self.PACBED_scaled = None
         # Scale CNN
         self.interpreter_scale = None
         self.scale_input_details = None
@@ -167,13 +166,6 @@ class Predictor:
         self.label_scale = None
         self.label_thickness = None
         self.label_mistilt = None
-        # Results
-        self.result = {
-            'thickness_pred': None,
-            'thickness_cnn_output': None,
-            'mistilt_pred': None,
-            'mistilt_cnn_output': None,
-            'scale': None}
 
         # Get paths
         self.Path_models, self.Path_dataframe = self.get_path(self.id_system, self.id_model)
@@ -253,8 +245,9 @@ class Predictor:
                     os.path.join(self.Path_models, label_name), sep=';'
                 )
 
-                # Load dataframe (csv-file with out index)
+        # Load dataframe (csv-file with out index)
         self.dataframe = pd.read_csv(self.Path_dataframe, sep=';')
+        self.conv_angle_norm = self.get_conv_angle_norm()
 
         print('Models and Labels loaded.')
 
@@ -268,20 +261,18 @@ class Predictor:
 
         return idx_pacbed, idx_conv
 
-    def set_input(self, pacbed_measured, conv_angle):
-        # Measured PACBED
-        self.pacbed_measured = pacbed_measured[:, :, np.newaxis]
-
+    def get_conv_angle_norm(self):
         # Used convergence angle
         conv_angle_unique = np.unique(self.dataframe['Conv_Angle'])
         # Calculate scaled convergence angle
-        self.conv_angle_norm = ((conv_angle - np.amin(conv_angle_unique)) / (
+        conv_angle_norm = ((self.conv_angle - np.amin(conv_angle_unique)) / (
                     np.amax(conv_angle_unique) - np.amin(conv_angle_unique))).astype(np.float32)
+        return conv_angle_norm
 
     # Scaling the PACBED by CNN
-    def scale_pacbed(self, scale_const=None):
+    def scale_pacbed(self, pacbed_measured, scale_const=None):
         # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
-        img_CNN, img_scaling = self.rescale_resize(self.pacbed_measured, 1, self.dim)
+        img_CNN, img_scaling = self.rescale_resize(pacbed_measured[:, :, np.newaxis], 1, self.dim)
 
         idx_pacbed, idx_conv = self.input_tensor_idx(self.scale_input_details)
 
@@ -332,11 +323,7 @@ class Predictor:
             img_scaling, img_CNN = self.rescale_resize(img_scaling, scale_const, self.dim[0:2])
             img_CNN = np.tile(img_CNN, (1, 1, 3))
 
-        # Save total scaling value
-        self.result['scale'] = scale_total
-
-        # Save scaled PACBED
-        self.PACBED_scaled = img_CNN
+        return scale_total, img_CNN
 
     def rescale_resize(self, img, scale, dim):
         # Scale image (with full pixels)
@@ -354,7 +341,9 @@ class Predictor:
 
         # Resize and normalize image for next predictions
         img_cnn = tf.keras.preprocessing.image.smart_resize(img, dim[0:2], interpolation='bilinear')
-        img_cnn = (2 * (img_cnn - np.amin(img_cnn)) / (np.amax(img_cnn) - np.amin(img_cnn)) - 1).astype(np.float32)
+        img_cnn = (
+            2 * (img_cnn - np.amin(img_cnn)) / (np.amax(img_cnn) - np.amin(img_cnn)) - 1
+        ).astype(np.float32)
 
         return (img_cnn, img)
 
@@ -370,11 +359,8 @@ class Predictor:
         # Redim PACBED
         pacbed_processed = redim_PACBED(pacbed_processed, dim=(680, 680))
 
-        # Set input
-        self.set_input(pacbed_processed, self.conv_angle)
-
         # Scale PACBED
-        self.scale_pacbed()
+        scale_total, PACBED_scaled = self.scale_pacbed(pacbed_processed)
 
         # Make thickness prediction
 
@@ -383,7 +369,7 @@ class Predictor:
         self.interpreter_thickness.set_tensor(self.scale_input_details[idx_conv]['index'],
                                               self.conv_angle_norm[np.newaxis][np.newaxis, :])
         self.interpreter_thickness.set_tensor(self.scale_input_details[idx_pacbed]['index'],
-                                              self.PACBED_scaled[np.newaxis, :, :, :])
+                                              PACBED_scaled[np.newaxis, :, :, :])
 
         # Interfere and make prediction
         self.interpreter_thickness.invoke()
@@ -405,7 +391,7 @@ class Predictor:
             self.conv_angle_norm[np.newaxis][np.newaxis, :]
         )
         self.interpreter_tilt.set_tensor(
-            self.scale_input_details[idx_pacbed]['index'], self.PACBED_scaled[np.newaxis, :, :, :]
+            self.scale_input_details[idx_pacbed]['index'], PACBED_scaled[np.newaxis, :, :, :]
         )
 
         # Interfere and make prediction
@@ -417,13 +403,13 @@ class Predictor:
         # Get mistilt value with the highest predicted value
         mistilt_predicted = self.label_mistilt['Mistilt / mrad'][np.argmax(mistilt_cnn_output)]
 
-        # Save results
-        self.result['thickness_pred'] = thickness_predicted
-        self.result['thickness_cnn_output'] = thickness_cnn_output
-        self.result['mistilt_pred'] = mistilt_predicted
-        self.result['mistilt_cnn_output'] = mistilt_cnn_output
-
-        return self.result
+        result = {}
+        result['thickness_pred'] = thickness_predicted
+        result['thickness_cnn_output'] = thickness_cnn_output
+        result['mistilt_pred'] = mistilt_predicted
+        result['mistilt_cnn_output'] = mistilt_cnn_output
+        result['scale'] = scale_total
+        return result
 
     def validate(self, result, PACBED_measured, azimuth_i=0):
 
