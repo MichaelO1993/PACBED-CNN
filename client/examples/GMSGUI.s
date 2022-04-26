@@ -2,7 +2,7 @@
 // in GMS
 
 string host = "localhost"
-int port = 8230
+number port = 8230
 
 Class MyDialog: UIFrame 
 { 
@@ -119,7 +119,7 @@ Class MyDialog: UIFrame
 	number convergence_angle = txtConva.DLGGetStringValue().val()
 	
   string pyScript = "from pacbedclient import imagefromresponse, query, arrayfromID; "
-  pyScript += "imagefromresponse(DM, query(image_array=arrayfromID(DM, " + id + "), "
+  pyScript += "imagefromresponse(DM, query(image_array=arrayfromID(DM, " + imgid + "), "
   pyScript += "crystal_structure='" + material + "', acceleration_voltage=" + ht_entered + ", "
   pyScript += "convergence_angle=" + convergence_angle + ", zone_u=0, zone_v=0, zone_w=1, "
   pyScript += "host='" + host + "', port=" + port + "))"
