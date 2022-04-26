@@ -1,4 +1,0 @@
-ncempy
-scikit-image
-tensorflow
-pandas
