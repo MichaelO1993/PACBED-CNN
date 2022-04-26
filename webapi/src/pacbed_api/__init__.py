@@ -2,6 +2,7 @@ from os.path import join, normpath, abspath, dirname
 import base64
 import functools
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, Request
@@ -20,6 +21,10 @@ BASE_DIR = normpath(abspath(dirname(__file__)))
 
 app.mount("/static", StaticFiles(directory=join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=join(BASE_DIR, "templates"))
+
+
+INFERENCE_WORKERS = 4
+INFERENCE_INTERNAL_THREADS = 4
 
 
 @app.get("/")
@@ -46,13 +51,14 @@ parameters_prediction = {
 
 predictors = {}
 
+pool = ThreadPoolExecutor(max_workers=INFERENCE_WORKERS)
 
 def load_models():
     df_system = pd.read_csv('./data/Register.csv', sep=';', index_col='id')
     for index, row in df_system[['material']].iterrows():
         params = parameters_prediction.copy()
         params['id_system'] = index
-        predictors[row['material']] = Predictor(params)
+        predictors[row['material']] = Predictor(params, num_threads=INFERENCE_INTERNAL_THREADS)
 
 
 load_models()
@@ -104,17 +110,17 @@ async def inference(
 
     fp = parameters.file_params
     if fp.typ == "dm4":
-        pattern = await sync_to_async(get_pattern_from_dm, None, file.file)
+        pattern = await sync_to_async(get_pattern_from_dm, pool, file.file)
     elif fp.typ == "raw":
         dtype = fp.dtype
         width = fp.width
         height = fp.height
-        pattern = np.frombuffer(await sync_to_async(file.file.read), dtype=dtype).reshape(
+        pattern = np.frombuffer(await sync_to_async(file.file.read, pool), dtype=dtype).reshape(
             (height, width)
         )
     # pattern = np.zeros((parameters.height, parameters.width), dtype=np.float32)
-    result = await sync_to_async(predictor.predict, None, pattern)
-    validation = await sync_to_async(predictor.validate, None, result, pattern)
+    result = await sync_to_async(predictor.predict, pool, pattern)
+    validation = await sync_to_async(predictor.validate, pool, result, pattern)
     print(result)
     return schemas.InferenceResults(
         thickness=result['thickness_pred'],
