@@ -1,0 +1,3 @@
+graft src/pacbed_api/templates/
+graft src/pacbed_api/static/
+include README.md
