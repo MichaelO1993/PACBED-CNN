@@ -1,7 +1,61 @@
 # PACBED-CNN
-PACBED Identification by CNNs consists of two python scripts (Training + Prediction).
+
+Infer thickness and mistilt from position-averaged convergent beam electron
+diffraction (PACBED) patterns using a convolutional neural network (CNN).
+
+Since training the required models requires significant resources, and a trained
+model is rather large compared to the size of an image, the inference can be
+deployed efficiently as a web service and queried from clients.
+
+This repository contains three components:
+
+* Python, Gatan Microscopy Suite (GMS) and web clients
+* Inference and web service
+* Training scripts
+
+# Python client library installation
+
+* Clone repository
+* Change to `client` directory in the repository
+* `pip install .`
+
+## Installation for Gatan Microscopy Suite
+
+The GMS / Digital Micrograph clients require [installation of the optional Python environment for GMS](https://www.gatan.com/python-installation). This installs Miniconda and creates a
+dedicated Python environment in C:\ProgramData\Miniconda3\envs\GMS_VENV_PYTHON. The Python interpreter in GMS runs from this environment. Installing the web service client library in this environment makes it available in GMS Python.
+
+Run "Anaconda Promt" as administrator and activate the GMS Python environment for installation:
+
+```
+conda activate C:\ProgramData\Miniconda3\envs\GMS_VENV_PYTHON
+```
+
+After that, install the client as described above into that environment.
+
+# Examples for clients
+
+The GMS clients and a Jupyter notebook client can be found in
+`client/examples/`. For GMS, both a minimal example and a convenient GUI client
+that combines acquisition and thickness inference are available. They are
+DMScript files that can be opened and run in GMS.
+
+The inference web service offers a web-based form that can be used from a
+browser and includes a JavaScript client for the service. The template for the form
+with the JavaScript client can be found at `webapi/src/pacbed_api/templates/form.html`
+
+# Web service installation
+
+To install and run the web service:
+
+- Clone this repository
+- Change into the `webapi` directory
+- `pip install -e .` to install the package and required dependencies (change to an appropriate Python virtual environment before)
+- Download and extract the example data (see below)
+- Change into the extracted PACBED-CNN-data directory and run the server via `uvicorn pacbed_api:app --port 8230`
+- Access the web GUI at http://localhost:8230/ or use the client library as mentioned above
 
 # Training
+
 The CNN_Training.py trains a pretrained Xception model for thickness, mistilt and scale prediction. The scale CNN is used at the prediction for better matching of the simulated and the measured PACBED before the thickness and mistilt prediction. This should increase the accuracy of the thickness and mistilt prediction.
 
 The **input** for this script is the **path and name** of a pandas dataframe (csv-file), which has to contain following columns:
@@ -15,21 +69,7 @@ Further, it has to be specified, which predictions should be trained ('Thickness
 
 The **outputs** of the script are trained models (h5-file) and a corresponding pandas dataframe, which contains the labels for the prediction. These are saved in the same location as the dataframe.
 
-An optional validation of the training can be done. The output of the datagenerator can be plotted to check, if the data augmentation is suitable for the simulated PACBEDs, and a confusion matrix (predicted vs true) can be plotted. The matrix can be used to see, if predicted values are far from the true value. (This would be more problematic as wrong predicted but close values.)
-
-# Prediction
-The CNN_Prediction.py predict the thickness and mistilt of a measured PACBED (dm4-format).
-
-The **input** for this script is the path and name of the measured PACBED-file and the folder, which contains the CNN-models and labels for the system with the correct conditions (electron energy, crystal, orientation, ...).
-
-The script centers the measured PACBED by finding the center of mass and scales it iterative with the scale CNN-model. After this, the thickness and mistilt are predicted with CNN-models.
-
-The **output** are the predicted thickness value and predicted the mistilt value.
-
-An optional validation of the prediction contains:
-  - Preprocessing: Comparison of the original PACBED with the scaled, resized and normalized PACBED
-  - Prediction output: Plotting the output of the thickness and mistilt model
-  - Comparison of the scaled PACBED with the predicted simulated PACBED (for this, dataframe and the simulated PACBEDs are required)
+An optional validation of the training can be done. The output of the data generator can be plotted to check, if the data augmentation is suitable for the simulated PACBEDs, and a confusion matrix (predicted vs true) can be plotted. The matrix can be used to see, if predicted values are far from the true value. (This would be more problematic as wrong predicted but close values.)
 
 # Example data
 
@@ -37,17 +77,10 @@ Data for testing, can be downloaded under:
 https://cloud.tugraz.at/index.php/s/tZ3GQHTZDzWjCbz
 
 The data contains two systems (trained CNNs and simulated PACBEDs):
-  - TiO2 (ID-number: 0)
-  - STO (ID-number: 1)
+  - Rutile (ID-number: 0)
+  - Strontium titanate (ID-number: 1)
 
-The folder structure is generated by the PACBED simulation file. Every material system gets its own ID, saved in the Register.csv (also for models, if multiple models are trained for specific system, for example different convergence angles). The predictor only requires the ID-number.
-
-
-# Web API prototype
-
-To run the web API prototype:
-
-- Change into the `webapi` directory
-- `pip install -e .` to install the package and required dependencies (change to an appropriate Python virtual environment before)
-- run the server: `uvicorn pacbed_api:app --reload`
-- access the API docs at http://localhost:8000/docs/
+The folder structure is generated by the PACBED simulation file. Every material
+system gets its own ID, saved in the Register.csv (also for models, if multiple
+models are trained for specific system, for example different convergence
+angles). The predictor only requires the ID-number.
