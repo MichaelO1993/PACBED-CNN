@@ -11,17 +11,11 @@ class ZoneAxis(BaseModel):
     w: int
 
 
-class Point2D(BaseModel):
-    y: float
-    x: float
-
-
 class PACBEDAnalysisParams(BaseModel):
     acceleration_voltage: int  # in V
-    crystal_structure: str  # FIXME: "SrTiO3" | "Rutile"; later: CIF files or whatever
+    crystal_structure: str  # FIXME: "Strontium titanate" | "Rutile"; later: CIF files or whatever
     zone_axis: ZoneAxis
-    convergence_angle: float  # mrad?
-    # center: Point2D
+    convergence_angle: float  # mrad
 
 
 class DType(str, Enum):
@@ -54,7 +48,7 @@ class InferenceParameters(BaseModel):
 
 
 class InferenceResults(BaseModel):
-    thickness: float  # in Angstrom
+    thickness: float  # in Ångstrom
     mistilt: float  # mrad
     scale: float  # unitless?
     validation: str
