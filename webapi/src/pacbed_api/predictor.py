@@ -543,7 +543,7 @@ class Predictor:
         fig.tight_layout()
 
         f = io.BytesIO()
-        plt.savefig(f, format='png')
+        fig.savefig(f, format='png')
         plt.close(fig)
         return f
 
