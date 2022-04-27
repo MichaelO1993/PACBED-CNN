@@ -6,3 +6,5 @@ __pycache__
 *.swp
 .ipynb_checkpoints
 webapi/PACBED-CNN-data/
+build
+dist
