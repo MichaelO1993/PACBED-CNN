@@ -13,9 +13,10 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 from skimage.registration import phase_cross_correlation
-from skimage.transform import warp_polar, rotate, rescale
+from skimage.transform import warp_polar
 
 from scipy.ndimage import zoom
+from scipy.ndimage import gaussian_filter
 
 # Use GPU
 gpu = False
@@ -116,7 +117,7 @@ def redim_PACBED(pacbed_img, dim=(680, 680)):
     PACBED_img = Image.fromarray(pacbed_img)
 
     # Resize
-    PACBED_img = PACBED_img.resize(dim, resample=Image.NEAREST)
+    PACBED_img = PACBED_img.resize(dim, resample=Image.BILINEAR)
 
     # Normalize for CNN
     PACBED_arr = np.asarray(PACBED_img)
@@ -306,7 +307,7 @@ class Predictor:
             # Iterative scaling of the image by CNN
             k = 0
             scale_total = 1
-            scale_pred = 1
+            #scale_pred = 1
             while True:
                 # Transform image to RGB for CNN input
                 img_CNN = np.tile(img_CNN, (1, 1, 3))
@@ -330,11 +331,11 @@ class Predictor:
                 new_scale_pred = self.label_scale['Scale / []'][np.argmax(scale_prediction)]
 
                 # Damp prediction to avoid oscillating
-                scale_pred = (k * scale_pred + (5 - k) * new_scale_pred) / 5
+                scale_pred = (k * 1 + (5 - k) * new_scale_pred) / 5
 
                 # Break loop conditions if maximum iteration is reached or
                 # prediction output is too small
-                if k > 5 or np.amax(scale_prediction) < 0.5:
+                if k > 5 or np.amax(scale_prediction) < 0.8 or new_scale_pred == 1:
                     break
                     # raise RuntimeError("Could not predict scale")
                 else:
@@ -348,6 +349,7 @@ class Predictor:
             # Constant scaling with given value
             img_scaling, img_CNN = self.rescale_resize(img_scaling, scale_const, self.dim[0:2])
             img_CNN = np.tile(img_CNN, (1, 1, 3))
+            scale_total = scale_const
 
         return scale_total, img_CNN
 
@@ -360,8 +362,8 @@ class Predictor:
             row_axis=0,
             col_axis=1,
             channel_axis=2,
-            fill_mode='constant',
-            cval=-1.,
+            fill_mode='nearest',
+            #cval=-1.,
             order=1
         )
 
@@ -378,12 +380,16 @@ class Predictor:
         assert len(pacbed_measured.shape) == 2
 
         # Preprocess PACBED
+        pacbed_non_zero = pacbed_measured.copy()
+        pacbed_non_zero[pacbed_non_zero < 0] = 0
         # Subtract background
-        pacbed_processed = background_subtraction(pacbed_measured)
+        pacbed_processed = background_subtraction(pacbed_non_zero)
         # Center PACBED
         pacbed_processed = center_PACBED(pacbed_processed)
         # Redim PACBED
         pacbed_processed = redim_PACBED(pacbed_processed, dim=(680, 680))
+        # Blur PACBED
+        pacbed_processed = gaussian_filter(pacbed_processed, sigma=3)
 
         # Scale PACBED
         scale_total, PACBED_scaled = self.scale_pacbed(pacbed_processed)
@@ -499,11 +505,6 @@ class Predictor:
         ax1.set_ylim([0, 1])
         ax1.set_xlabel('Mistilt / mrad')
 
-        # Plot loaded PACBED
-        axs[0, 0].imshow(PACBED_measured)
-        axs[0, 0].set_title('Measured PACBED')
-        axs[0, 0].axis('off')
-
         # Plot best matching simulated PACBED
 
         # Get convergenc angle
@@ -526,6 +527,18 @@ class Predictor:
         PACBED_sim_plot = axs[0, 1].imshow(PACBED_sim)
         axs[0, 1].set_title('Simulated PACBED')
         axs[0, 1].axis('off')
+        
+        # Plot loaded PACBED
+        # Rotate measured PACBED to match simulated PACBED
+        rot, scale = self.polar_registration(self.PACBED_scaled[:, :, 0], PACBED_sim)
+        PACBED_measured = self.PACBED_scaled[:, :, 0]
+        PACBED_measured = np.asarray(Image.fromarray(PACBED_measured).rotate(-rot, fillcolor = np.amin(PACBED_measured)))
+        PACBED_measured = center_PACBED(PACBED_measured)
+        
+        axs[0, 0].imshow(PACBED_measured)
+        axs[0, 0].set_title('Measured PACBED')
+        axs[0, 0].axis('off')
+        
 
         # Add text
         props = dict(boxstyle='round', facecolor='lightblue', alpha=0.5)
@@ -585,3 +598,21 @@ class Predictor:
             img_sim_arr = img_sim_arr[:, :, 0]
 
         return img_sim_arr
+
+    def polar_registration(self, pacbed_measured, pacbed_sim):
+
+        radius = pacbed_sim.shape[0] // 2
+        image_polar = warp_polar(pacbed_sim, radius=radius,
+                                 scaling='log')
+        rescaled_polar = warp_polar(pacbed_measured, radius=radius,
+                                    scaling='log')
+
+        # setting `upsample_factor` can increase precision
+        shifts, error, phasediff = phase_cross_correlation(image_polar, rescaled_polar,
+                                                           upsample_factor=2)
+        shiftr, shiftc = shifts[:2]
+
+        klog = radius / np.log(radius)
+        shift_scale = 1 / (np.exp(shiftc / klog))
+
+        return shiftr, shift_scale
