@@ -17,9 +17,8 @@ Class MyDialog: UIFrame
     { 
     DialogTG = DLGCreateDialog("AutoPACBED") 
     choCrystal  = DLGCreateChoice(choCrystal_Items,0) // StringField("TiO2 rutile",20)
-	choCrystal.DLGAddChoiceItemEntry("Rutile",1)
-    choCrystal.DLGAddChoiceItemEntry("Strontium titanate",1)
-    choCrystal.DLGAddChoiceItemEntry("Rutile_200",1)
+    choCrystal.DLGAddChoiceItemEntry("Rutile")
+    choCrystal.DLGAddChoiceItemEntry("Strontium Titanate")
     
     //MyRealField    = DLGCreateRealField(10.2,10,2).DLGAnchor("East") 
     //MyIntegerField = DLGCreateIntegerField(5,10).DLGAnchor("West") 
