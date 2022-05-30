@@ -147,9 +147,7 @@ class Predictor:
         # Declare variables
         self.id_system = parameters_prediction['id_system']
         self.id_model = parameters_prediction['id_model']
-        self.conv_angle = parameters_prediction['conv_angle']
 
-        self.conv_angle_norm = None
         self.dataframe = None
         self.dim = None
 
@@ -274,7 +272,6 @@ class Predictor:
 
         # Load dataframe (csv-file with out index)
         self.dataframe = pd.read_csv(self.Path_dataframe, sep=';')
-        self.conv_angle_norm = self.get_conv_angle_norm()
 
         print('Models and Labels loaded.')
 
@@ -288,11 +285,11 @@ class Predictor:
 
         return idx_pacbed, idx_conv
 
-    def get_conv_angle_norm(self):
+    def get_conv_angle_norm(self, conv_angle):
         # Used convergence angle
         conv_angle_unique = np.unique(self.dataframe['Conv_Angle'])
         # Calculate scaled convergence angle
-        conv_angle_norm = ((self.conv_angle - np.amin(conv_angle_unique)) / (
+        conv_angle_norm = ((conv_angle - np.amin(conv_angle_unique)) / (
                     np.amax(conv_angle_unique) - np.amin(conv_angle_unique))).astype(np.float32)
         return conv_angle_norm
 
@@ -315,7 +312,7 @@ class Predictor:
                 # Input PACBED and normalized convergence angle in the correct format
                 self.interpreter_scale.set_tensor(
                     self.scale_input_details[idx_conv]['index'],
-                    self.conv_angle_norm[np.newaxis][np.newaxis, :]
+                    conv_angle_norm[np.newaxis][np.newaxis, :]
                 )
                 self.interpreter_scale.set_tensor(
                     self.scale_input_details[idx_pacbed]['index'], img_CNN[np.newaxis, :, :, :]
@@ -375,7 +372,7 @@ class Predictor:
 
         return (img_cnn, img)
 
-    def predict(self, pacbed_measured: np.ndarray):
+    def predict(self, pacbed_measured: np.ndarray, conv_angle: float):
 
         assert len(pacbed_measured.shape) == 2
 
@@ -390,16 +387,19 @@ class Predictor:
         pacbed_processed = redim_PACBED(pacbed_processed, dim=(680, 680))
         # Blur PACBED
         pacbed_processed = gaussian_filter(pacbed_processed, sigma=3)
+        
+        # Normalize convergenc angle
+        conv_angle_norm = self.get_conv_angle_norm(conv_angle)
 
         # Scale PACBED
-        scale_total, PACBED_scaled = self.scale_pacbed(pacbed_processed)
+        scale_total, PACBED_scaled = self.scale_pacbed(pacbed_processed, conv_angle_norm)
 
         # Make thickness prediction
 
         # Set input for CNN
         idx_pacbed, idx_conv = self.input_tensor_idx(self.thickness_input_details)
         self.interpreter_thickness.set_tensor(self.scale_input_details[idx_conv]['index'],
-                                              self.conv_angle_norm[np.newaxis][np.newaxis, :])
+                                              conv_angle_norm[np.newaxis][np.newaxis, :])
         self.interpreter_thickness.set_tensor(self.scale_input_details[idx_pacbed]['index'],
                                               PACBED_scaled[np.newaxis, :, :, :])
 
@@ -420,7 +420,7 @@ class Predictor:
         idx_pacbed, idx_conv = self.input_tensor_idx(self.tilt_input_details)
         self.interpreter_tilt.set_tensor(
             self.scale_input_details[idx_conv]['index'],
-            self.conv_angle_norm[np.newaxis][np.newaxis, :]
+            conv_angle_norm[np.newaxis][np.newaxis, :]
         )
         self.interpreter_tilt.set_tensor(
             self.scale_input_details[idx_pacbed]['index'], PACBED_scaled[np.newaxis, :, :, :]
@@ -443,7 +443,7 @@ class Predictor:
         result['scale'] = scale_total
         return result
 
-    def validate(self, result, PACBED_measured, azimuth_i=0):
+    def validate(self, result, PACBED_measured, conv_angle, azimuth_i=0):
 
         # Create figure with special subplots
         fig, axs = plt.subplots(
@@ -510,7 +510,7 @@ class Predictor:
         # Get convergenc angle
         conv_angle_unique = np.unique(self.dataframe['Conv_Angle'])
         # Take the nearest simulated convergence angle
-        conv_angle_plot = self.find_nearest(conv_angle_unique, self.conv_angle)
+        conv_angle_plot = self.find_nearest(conv_angle_unique, conv_angle)
 
         # Get mistilt
         mistilt_i = np.argmax(mistilt_pred_sorted)
@@ -529,10 +529,28 @@ class Predictor:
         axs[0, 1].axis('off')
         
         # Plot loaded PACBED
+        # Preprocess PACBED, like in predict
+        pacbed_non_zero = PACBED_measured.copy()
+        pacbed_non_zero[pacbed_non_zero < 0] = 0
+        # Subtract background
+        pacbed_processed = background_subtraction(pacbed_non_zero)
+        # Center PACBED
+        pacbed_processed = center_PACBED(pacbed_processed)
+        # Zoom
+        pacbed_processed = tf.keras.preprocessing.image.apply_affine_transform(
+            pacbed_processed[:, :, np.newaxis],
+            zx=1 / result['scale'],
+            zy=1 / result['scale'],
+            row_axis=0,
+            col_axis=1,
+            channel_axis=2,
+            fill_mode='nearest',
+            order=1
+        )
+        
         # Rotate measured PACBED to match simulated PACBED
-        rot, scale = self.polar_registration(self.PACBED_scaled[:, :, 0], PACBED_sim)
-        PACBED_measured = self.PACBED_scaled[:, :, 0]
-        PACBED_measured = np.asarray(Image.fromarray(PACBED_measured).rotate(-rot, fillcolor = np.amin(PACBED_measured)))
+        rot, scale = self.polar_registration(pacbed_processed[:, :, 0], PACBED_sim)
+        PACBED_measured = np.asarray(Image.fromarray(pacbed_processed[:, :, 0]).rotate(-rot, fillcolor = np.amin(pacbed_processed[:, :, 0])))
         PACBED_measured = center_PACBED(PACBED_measured)
         
         axs[0, 0].imshow(PACBED_measured)
@@ -545,7 +563,7 @@ class Predictor:
         textstr = (
             r'Thickness = %.1f nm  ' % (thickness / 10,) +
             r'Mistilt = %.0f mrad  ' % (mistilt,) +
-            r'Conv = %.0f mrad' % (conv_angle_plot,)
+            r'Conv = %.1f mrad' % (conv_angle_plot,)
         )
 
         text = fig.text(
