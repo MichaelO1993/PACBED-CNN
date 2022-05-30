@@ -46,7 +46,6 @@ async def root(request: Request):
 # Select folder with CNN models and labels for a specific system by its ID from Register.csv
 parameters_prediction = {
     'id_model': 0,  # Model Id from the specific system model register
-    'conv_angle': 20.0  # Used convergence angle for recording the measured PACBED
     }
 
 predictors = {}
@@ -103,10 +102,10 @@ async def inference(
     # TODO: return different result if the inference was not available immediately
     # TODO: validate parameters - they need to fit the models we have loaded
     pp = parameters.physical_params
-    assert pp.acceleration_voltage == 80000
+    assert (pp.acceleration_voltage == 80000) or (pp.acceleration_voltage == 300000)
     assert pp.zone_axis == schemas.ZoneAxis(u=0, v=0, w=1)
     predictor = predictors[pp.crystal_structure]
-    assert np.allclose(pp.convergence_angle, 20)
+    assert (pp.convergence_angle <= 25) and (pp.convergence_angle >= 15)
 
     fp = parameters.file_params
     if fp.typ == "dm4":
@@ -119,8 +118,8 @@ async def inference(
             (height, width)
         )
     # pattern = np.zeros((parameters.height, parameters.width), dtype=np.float32)
-    result = await sync_to_async(predictor.predict, pool, pattern)
-    validation = await sync_to_async(predictor.validate, pool, result, pattern)
+    result = await sync_to_async(predictor.predict, pool, pattern, pp.convergence_angle)
+    validation = await sync_to_async(predictor.validate, pool, result, pattern,  pp.convergence_angle)
     print(result)
     return schemas.InferenceResults(
         thickness=result['thickness_pred'],
