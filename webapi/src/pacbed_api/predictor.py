@@ -294,7 +294,7 @@ class Predictor:
         return conv_angle_norm
 
     # Scaling the PACBED by CNN
-    def scale_pacbed(self, pacbed_measured, scale_const=None):
+    def scale_pacbed(self, pacbed_measured, conv_angle_norm, scale_const=None):
         # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
         img_CNN, img_scaling = self.rescale_resize(pacbed_measured[:, :, np.newaxis], 1, self.dim)
 
@@ -344,7 +344,7 @@ class Predictor:
                     scale_total *= scale_pred
         else:
             # Constant scaling with given value
-            img_scaling, img_CNN = self.rescale_resize(img_scaling, scale_const, self.dim[0:2])
+            img_CNN, img_scaling = self.rescale_resize(img_scaling, scale_const, self.dim[0:2])
             img_CNN = np.tile(img_CNN, (1, 1, 3))
             scale_total = scale_const
 
