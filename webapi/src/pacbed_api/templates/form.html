@@ -28,7 +28,8 @@
                 </div>
                 <div class="mui-select">
                     <select name="acceleration_voltage">
-                        <option value="80000">80000</option>
+                        <option value="80000">80,000</option>
+                        <option value="300000">300,000</option>
                     </select>
                     <label>Acceleration voltage</label>
                 </div>
@@ -46,11 +47,9 @@
                     </select>
                     <label>Crystal structure</label>
                 </div>
-                <div class="mui-select">
-                    <select name="convergence_angle">
-                        <option value="20">20</option>
-                    </select>
-                    <label>Convergence angle</label>
+                <div class="mui-textfield">
+                    <input type="number" step="0.1" value="20" name="convergence_angle">
+                    <label>Convergence angle (mrad)</label>
                 </div>
                 <p>
                     <input id="submit" type="submit" value="Derive thickness and mistilt" class="mui-btn mui-btn--raised mui-btn--primary" />
