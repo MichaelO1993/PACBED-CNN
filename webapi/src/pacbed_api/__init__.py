@@ -32,7 +32,7 @@ async def root(request: Request):
     """
     Returns the basic web form for uploading PACBED patterns to be analysed
     """
-    crystal_structures = predictors.keys()
+    crystal_structures = [p[0] for p in predictors.keys()]
 
     return templates.TemplateResponse(
         "form.html",
@@ -54,10 +54,12 @@ pool = ThreadPoolExecutor(max_workers=INFERENCE_WORKERS)
 
 def load_models():
     df_system = pd.read_csv('./data/Register.csv', sep=';', index_col='id')
-    for index, row in df_system[['material']].iterrows():
+    for index, row in df_system[['material', 'high tension', 'direction']].iterrows():
         params = parameters_prediction.copy()
         params['id_system'] = index
-        predictors[row['material']] = Predictor(params, num_threads=INFERENCE_INTERNAL_THREADS)
+        key = (row['material'], row['high tension'], row['direction'])
+        print(key)
+        predictors[key] = Predictor(params, num_threads=INFERENCE_INTERNAL_THREADS)
 
 
 load_models()
@@ -102,9 +104,12 @@ async def inference(
     # TODO: return different result if the inference was not available immediately
     # TODO: validate parameters - they need to fit the models we have loaded
     pp = parameters.physical_params
-    assert (pp.acceleration_voltage == 80000) or (pp.acceleration_voltage == 300000)
-    assert pp.zone_axis == schemas.ZoneAxis(u=0, v=0, w=1)
-    predictor = predictors[pp.crystal_structure]
+    key = (
+        pp.crystal_structure,
+        pp.acceleration_voltage // 1000,
+        f'({pp.zone_axis.u}, {pp.zone_axis.v}, {pp.zone_axis.w})'
+    )
+    predictor = predictors[key]
     assert (pp.convergence_angle <= 25) and (pp.convergence_angle >= 15)
 
     fp = parameters.file_params
