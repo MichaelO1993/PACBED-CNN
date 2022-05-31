@@ -67,8 +67,9 @@
         e.preventDefault();
         var file = form.elements.file.files[0];
         if(!file) {
-            var messages = document.querySelector("#messages");
-            // TODO: show error
+            dest.innerHTML = `
+            <p>Please select a file for upload</p>
+            `;
             return;
         }
         var uvw = form.elements.zone_axis.value.split(" ").map((v) => parseInt(v));
@@ -111,7 +112,10 @@
             </dl>
             `;
             dest.innerHTML = result_html;
-        })
+        }).catch((error) => {
+            submitbtn.disabled = false;
+            dest.innerHTML = `<p>Inferrence error: ${error}</p>`;
+        });
     });
     </script>
     <style>
