@@ -57,7 +57,7 @@ To install and run the web service:
 # Example data
 
 Data for testing, can be downloaded under:
-https://cloud.tugraz.at/index.php/s/4A7DM7jfYP8W9dN
+https://cloud.tugraz.at/index.php/s/ptTMbxt3wdz8AWG
 
 The data contains two systems (trained CNNs and simulated PACBEDs):
   - Rutile (ID-number: 0)
