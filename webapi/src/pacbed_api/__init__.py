@@ -58,7 +58,6 @@ def load_models():
         params = parameters_prediction.copy()
         params['id_system'] = index
         key = (row['material'], row['high tension'], row['direction'])
-        print(key)
         predictors[key] = Predictor(params, num_threads=INFERENCE_INTERNAL_THREADS)
 
 
