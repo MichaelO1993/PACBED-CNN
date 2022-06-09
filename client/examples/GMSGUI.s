@@ -1,27 +1,29 @@
-// Full example for PACBED thickness workflow
-// in GMS
+// Full example for PACBED thickness workflow providing a GUI in GMS
+// based on an active PACBED pattern
+// v.1.0, 06.09.2022
+// Note: if error 'An image with given name cannot be found' is returned on execution please 
+// remove the "1" as an input argument of "ExecutePythonScriptString" function in line 134
+// -------------------------------------------
 
 string host = "localhost"
 number port = 8230
 
-Class MyDialog: UIFrame 
+Class PACBEDGUI: UIFrame 
 { 
-  MyDialog(Object self)  Result("\n Created #"  + self.ScriptObjectGetID().hex()) 
-  ~MyDialog(Object self) Result("\n Destroyed #"+ self.ScriptObjectGetID().hex()) 
+  PACBEDGUI(Object self)  Result("\n Created #"  + self.ScriptObjectGetID().hex()) 
+  ~PACBEDGUI(Object self) Result("\n Destroyed #"+ self.ScriptObjectGetID().hex()) 
   
   TagGroup DialogTG, choCrystal,choCrystal_Items, cmdGetPACBED, MyRealField, MyIntegerField, txtOrientation_u, txtOrientation_v,txtOrientation_w,lblCrystal, lblOrientation_u, lblOrientation_v, lblOrientation_w, lblHT, lblConva, txtHT, txtConva, lblGetPACBED, lblThickness, lblConfidence, cmdCalcThickness
   image img, outimg
   string py
   
-  TagGroup CreateMyDialog(Object self) 
+  TagGroup CreatePACBEDGUI(Object self) 
     { 
     DialogTG = DLGCreateDialog("AutoPACBED") 
     choCrystal  = DLGCreateChoice(choCrystal_Items,0) // StringField("TiO2 rutile",20)
     choCrystal.DLGAddChoiceItemEntry("Rutile")
     choCrystal.DLGAddChoiceItemEntry("Strontium Titanate")
     
-    //MyRealField    = DLGCreateRealField(10.2,10,2).DLGAnchor("East") 
-    //MyIntegerField = DLGCreateIntegerField(5,10).DLGAnchor("West") 
     txtOrientation_u = DLGCreateIntegerField(0,4)
     txtOrientation_v = DLGCreateIntegerField(0,4)
     txtOrientation_w = DLGCreateIntegerField(1,4)
@@ -81,20 +83,21 @@ Class MyDialog: UIFrame
     return DialogTG 
     }   
  
-  Object Init(Object self)  return self.super.Init(self.CreateMyDialog()) 
+  Object Init(Object self)  return self.super.Init(self.CreatePACBEDGUI()) 
   
   TagGroup GetPACBEDButton(Object self) {
+  
 	img := GetFrontImage()
+	
 	If (!img.ImageIsValid()) Exit(0)
 	self.LookUpElement("#PACBEDName").DLGTitle(""+img.GetName())
 	self.SetElementIsEnabled("#Calc",1) 
-	//self.LookUpElement("#PACBEDName").DLGGetElement(0).DLGLabel(img.GetName()) 
+
 	Number sx, sy
 	getsize(img,sx,sy)
 	Result("\n"+ sx + "/" + sy + " " + img.GetName())
 	
 	taggroup imgtags=img.imagegettaggroup()
-	//imgtags.taggroupopenbrowserwindow(0)
 	number HTvalue
 	string targettaggroup="Microscope Info:Voltage"
 	if(!TagGroupDoesTagExist(imgtags,targettaggroup)){
@@ -110,7 +113,7 @@ Class MyDialog: UIFrame
   TagGroup CalcThicknessButton(Object self) {
 	
 	number imgid = img.ImageGetID()
-	number ht_entered = txtHT.DLGGetStringValue().val()*1000 //self.LookUpElement("#HTValueInput")
+	number ht_entered = txtHT.DLGGetStringValue().val()*1000
 	
 	string material
 	choCrystal.DLGGetNthLabel( choCrystal.DLGGetValue(), material )
@@ -147,7 +150,6 @@ Class MyDialog: UIFrame
 	DeleteImage(b_img)
   }
 }
-Object DialogOBJ = Alloc(MyDialog).Init() 
+Object DialogOBJ = Alloc(PACBEDGUI).Init() 
 	
-DialogOBJ.Display("Test Dialog") 
-//DialogOBJ.Pose()
+DialogOBJ.Display("Remote PACBED GUI") 
