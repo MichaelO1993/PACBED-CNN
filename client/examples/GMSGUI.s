@@ -1,6 +1,6 @@
 // Full example for PACBED thickness workflow providing a GUI in GMS
 // based on an active PACBED pattern
-// v.1.0, 06.09.2022
+// v.1.0, 09.06.2022
 // Note: if error 'An image with given name cannot be found' is returned on execution please 
 // remove the "1" as an input argument of "ExecutePythonScriptString" function in line 134
 // -------------------------------------------
