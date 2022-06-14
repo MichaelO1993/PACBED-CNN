@@ -39,8 +39,8 @@ Class PACBEDGUI: UIFrame
     txtConva       = DLGCreateRealField(20.0,10,2) 
     cmdCalcThickness = DLGCreatePushButton("Determine Thickness","CalcThicknessButton").DLGIdentifier("#Calc")
     dlgenabled(cmdCalcThickness,0) 
-    lblThickness   = DLGCreateLabel("Thickness value: ...").DLGIdentifier("#Thickness").DLGAnchor("East") 
-    lblConfidence  = DLGCreateLabel("Confidence: ...").DLGIdentifier("#Confidence").DLGAnchor("East")  
+    lblThickness   = DLGCreateLabel("Thickness: ...",20).DLGIdentifier("#Thickness").DLGAnchor("West") 
+    lblConfidence  = DLGCreateLabel("Mistilt: ...",20).DLGIdentifier("#Mistilt").DLGAnchor("West")  
       
 	TagGroup grpGetPACBED, grpGetPACBEDItems 
 	grpGetPACBED = DLGCreateGroup(grpGetPACBEDItems)  
@@ -144,6 +144,17 @@ Class PACBEDGUI: UIFrame
 	TagGroup targettags = imagegettaggroup(validation)
 
 	taggroupcopytagsfrom(targettags,sourcetags)
+	
+	number tagvalue_thickness
+	string targettaggroup_thickness = "thickness"
+	sourcetags.taggroupgettagasnumber(targettaggroup_thickness,tagvalue_thickness)
+	self.LookUpElement("#Thickness").DLGTitle("Thickness: " +  Format( tagvalue_thickness/10, "%.1f" ) + " nm")
+
+	number tagvalue_mistilt
+	string targettaggroup_mistilt = "mistilt"
+	sourcetags.taggroupgettagasnumber(targettaggroup_mistilt,tagvalue_mistilt)
+	self.LookUpElement("#Mistilt").DLGTitle("Mistilt: " + Format( tagvalue_mistilt, "%.1f" ) + " mrad")
+
 
 	DeleteImage(r_img)
 	DeleteImage(g_img)
