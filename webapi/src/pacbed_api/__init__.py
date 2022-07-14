@@ -122,8 +122,8 @@ async def inference(
             (height, width)
         )
     # pattern = np.zeros((parameters.height, parameters.width), dtype=np.float32)
-    result = await sync_to_async(predictor.predict, pool, pattern, pp.convergence_angle)
-    validation = await sync_to_async(predictor.validate, pool, result, pattern,  pp.convergence_angle)
+    result, pacbed_pred_out = await sync_to_async(predictor.predict, pool, pattern, pp.convergence_angle)
+    validation = await sync_to_async(predictor.validate, pool, result, pacbed_pred_out,  pp.convergence_angle)
     print(result)
     return schemas.InferenceResults(
         thickness=result['thickness_pred'],
