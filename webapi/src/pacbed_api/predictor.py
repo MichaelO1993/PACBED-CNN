@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 import glob
 import os
 import io
@@ -312,7 +315,7 @@ class Predictor:
 
                 # Break loop conditions if maximum iteration is reached or
                 # prediction output is too small
-                if k > 5 or np.amax(scale_prediction) < 0.8 or new_scale_pred == 1:
+                if k > 5 or np.amax(scale_prediction) < 0.5 or new_scale_pred == 1:
                     break
                     # raise RuntimeError("Could not predict scale")
                 else:
