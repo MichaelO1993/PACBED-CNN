@@ -44,9 +44,17 @@ else:
     print("No GPU used or found")
 
 
-def background_subtraction(pacbed_img, sigma_fac):
+def background_subtraction(pacbed_img, sigma_fac,  border=0.1):
     # Subtract Background (improves prediction at larger thicknesses)
-    background = gaussian_filter(pacbed_img, sigma=sigma_fac*pacbed_img.shape[0], mode = 'constant', cval = 0)
+
+    if sigma_fac is None:
+        pacbed_background = pacbed_img.copy()
+        border_px_x = int(border * pacbed_background.shape[0])
+        border_px_y = int(border * pacbed_background.shape[1])
+        pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y] = 0
+        background = np.sum(pacbed_background) / (pacbed_background.size - pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y].size)
+    else:
+        background = gaussian_filter(pacbed_img, sigma=sigma_fac*pacbed_img.shape[0], mode = 'constant', cval = 0)
 
     pacbed_background_sub = pacbed_img - background
     pacbed_background_sub[pacbed_background_sub <= 0] = 0
@@ -277,8 +285,7 @@ class Predictor:
     def scale_pacbed(self, pacbed_measured, conv_angle_norm, scale_const=None):
         # Speed up scaling algorithm (working with CNN input dimension)
         pacbed_scaling = redim_PACBED(pacbed_measured, dim=self.dim[0:2])[:, :, np.newaxis]
-
-        # Zoom image (first time to get the correct format)
+        # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
         img_CNN = self.rescale_resize(pacbed_scaling, 1, self.dim)
 
         idx_pacbed, idx_conv = self.input_tensor_idx(self.scale_input_details)
@@ -372,20 +379,21 @@ class Predictor:
             pacbed_processed = redim_PACBED(pacbed_non_zero, dim=self.dim[0:2])
         else:
             # no scaling
-            pacbed_processed =pacbed_non_zero
+            pacbed_processed = pacbed_non_zero
 
 
         # Center PACBED
         pacbed_processed = center_PACBED(pacbed_processed)
 
         # Subtract background
-        pacbed_processed = background_subtraction(pacbed_processed, sigma_fac = 0.9)
+        pacbed_processed = background_subtraction(pacbed_processed, sigma_fac=None)
+        pacbed_processed_scaling = background_subtraction(pacbed_processed, sigma_fac = 0.9)
         
         # Normalize convergenc angle
         conv_angle_norm = self.get_conv_angle_norm(conv_angle)
 
         # Scale PACBED
-        scale_total = self.scale_pacbed(pacbed_processed, conv_angle_norm, scale_const = None)
+        scale_total = self.scale_pacbed(pacbed_processed_scaling, conv_angle_norm, scale_const = None)
         PACBED_scaled = self.rescale_resize(pacbed_processed[:, :, np.newaxis], scale_total, self.dim[0:2])
         PACBED_scaled = np.tile(PACBED_scaled, (1, 1, 3))
 
