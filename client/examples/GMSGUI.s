@@ -23,6 +23,7 @@ Class PACBEDGUI: UIFrame
     choCrystal  = DLGCreateChoice(choCrystal_Items,0) // StringField("TiO2 rutile",20)
     choCrystal.DLGAddChoiceItemEntry("Rutile")
     choCrystal.DLGAddChoiceItemEntry("Strontium Titanate")
+    choCrystal.DLGAddChoiceItemEntry("Beryl")
     
     txtOrientation_u = DLGCreateIntegerField(0,4)
     txtOrientation_v = DLGCreateIntegerField(0,4)

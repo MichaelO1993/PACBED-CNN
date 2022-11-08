@@ -109,7 +109,7 @@ async def inference(
         f'({pp.zone_axis.u}, {pp.zone_axis.v}, {pp.zone_axis.w})'
     )
     predictor = predictors[key]
-    assert (pp.convergence_angle <= 25) and (pp.convergence_angle >= 15)
+    assert (pp.convergence_angle <= 25) and (pp.convergence_angle >= 5)
 
     fp = parameters.file_params
     if fp.typ == "dm4":
@@ -122,8 +122,8 @@ async def inference(
             (height, width)
         )
     # pattern = np.zeros((parameters.height, parameters.width), dtype=np.float32)
-    result = await sync_to_async(predictor.predict, pool, pattern, pp.convergence_angle)
-    validation = await sync_to_async(predictor.validate, pool, result, pattern,  pp.convergence_angle)
+    result, pacbed_pred_out = await sync_to_async(predictor.predict, pool, pattern, pp.convergence_angle)
+    validation = await sync_to_async(predictor.validate, pool, result, pacbed_pred_out,  pp.convergence_angle)
     print(result)
     return schemas.InferenceResults(
         thickness=result['thickness_pred'],

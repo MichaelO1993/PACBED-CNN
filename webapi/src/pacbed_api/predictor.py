@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+
 import glob
 import os
 import io
@@ -41,15 +44,18 @@ else:
     print("No GPU used or found")
 
 
-def background_subtraction(pacbed_img, border=0.1):
+def background_subtraction(pacbed_img, sigma_fac,  border=0.1):
     # Subtract Background (improves prediction at larger thicknesses)
-    pacbed_background = pacbed_img.copy()
-    border_px_x = int(border * pacbed_background.shape[0])
-    border_px_y = int(border * pacbed_background.shape[1])
-    pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y] = 0
-    background = np.sum(pacbed_background)/(pacbed_background.size - border_px_x*border_px_y)
 
-    # background = np.mean(pacbed_img) / 4 # The higher the noise the larger the background should be
+    if sigma_fac is None:
+        pacbed_background = pacbed_img.copy()
+        border_px_x = int(border * pacbed_background.shape[0])
+        border_px_y = int(border * pacbed_background.shape[1])
+        pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y] = 0
+        background = np.sum(pacbed_background) / (pacbed_background.size - pacbed_background[border_px_x:-border_px_x, border_px_y:-border_px_y].size)
+    else:
+        background = gaussian_filter(pacbed_img, sigma=sigma_fac*pacbed_img.shape[0], mode = 'constant', cval = 0)
+
     pacbed_background_sub = pacbed_img - background
     pacbed_background_sub[pacbed_background_sub <= 0] = 0
 
@@ -119,27 +125,9 @@ def redim_PACBED(pacbed_img, dim=(680, 680)):
     # Resize
     PACBED_img = PACBED_img.resize(dim, resample=Image.BILINEAR)
 
-    # Normalize for CNN
-    PACBED_arr = np.asarray(PACBED_img)
-    pacbed_img = (
-        2 * PACBED_arr - np.amin(PACBED_arr) / (np.amax(PACBED_arr) - np.amin(PACBED_arr)) - 1
-    ).astype(np.float32)
-
     print(f'PACBED dimensions changed to {dim}')
 
-    return pacbed_img
-
-
-def show(pacbed_raw, pacbed_processed):
-    # Create figure
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-
-    ax1.imshow(pacbed_raw)
-    ax1.set_title('Measured PACBED')
-    ax2.imshow(pacbed_processed)
-    ax2.set_title('Processed PACBED')
-
-    fig.tight_layout()
+    return np.asarray(PACBED_img)
 
 
 class Predictor:
@@ -295,16 +283,18 @@ class Predictor:
 
     # Scaling the PACBED by CNN
     def scale_pacbed(self, pacbed_measured, conv_angle_norm, scale_const=None):
+        # Speed up scaling algorithm (working with CNN input dimension)
+        pacbed_scaling = redim_PACBED(pacbed_measured, dim=self.dim[0:2])[:, :, np.newaxis]
         # Create two images (smaller dimension for CNN input, larger dimension for Scaling)
-        img_CNN, img_scaling = self.rescale_resize(pacbed_measured[:, :, np.newaxis], 1, self.dim)
+        img_CNN = self.rescale_resize(pacbed_scaling, 1, self.dim)
 
         idx_pacbed, idx_conv = self.input_tensor_idx(self.scale_input_details)
 
         if scale_const is None:
-            # Iterative scaling of the image by CNN
+            # Iterative scaling of the image by CNN to get a final total scale value
             k = 0
             scale_total = 1
-            #scale_pred = 1
+
             while True:
                 # Transform image to RGB for CNN input
                 img_CNN = np.tile(img_CNN, (1, 1, 3))
@@ -332,23 +322,21 @@ class Predictor:
 
                 # Break loop conditions if maximum iteration is reached or
                 # prediction output is too small
-                if k > 5 or np.amax(scale_prediction) < 0.8 or new_scale_pred == 1:
+                if k > 5 or np.amax(scale_prediction) < 0.5 or new_scale_pred == 1:
                     break
                     # raise RuntimeError("Could not predict scale")
                 else:
-                    img_CNN, img_scaling = self.rescale_resize(
-                        img_scaling, scale_pred, self.dim[0:2]
-                    )
+                    # Scale image with the total scale factor
+                    scale_total *= scale_pred
+                    img_CNN = self.rescale_resize(
+                        pacbed_scaling, scale_total, self.dim[0:2])
                     # Loop counter
                     k += 1
-                    scale_total *= scale_pred
         else:
             # Constant scaling with given value
-            img_CNN, img_scaling = self.rescale_resize(img_scaling, scale_const, self.dim[0:2])
-            img_CNN = np.tile(img_CNN, (1, 1, 3))
             scale_total = scale_const
 
-        return scale_total, img_CNN
+        return scale_total
 
     def rescale_resize(self, img, scale, dim):
         # Scale image (with full pixels)
@@ -370,7 +358,7 @@ class Predictor:
             2 * (img_cnn - np.amin(img_cnn)) / (np.amax(img_cnn) - np.amin(img_cnn)) - 1
         ).astype(np.float32)
 
-        return (img_cnn, img)
+        return img_cnn
 
     def predict(self, pacbed_measured: np.ndarray, conv_angle: float):
 
@@ -379,20 +367,35 @@ class Predictor:
         # Preprocess PACBED
         pacbed_non_zero = pacbed_measured.copy()
         pacbed_non_zero[pacbed_non_zero < 0] = 0
-        # Subtract background
-        pacbed_processed = background_subtraction(pacbed_non_zero)
+
+        # Redim PACBED (downsizing to speed up operation, upsizing to match CNN input dimension)
+        if pacbed_non_zero.size > 680 * 680:
+            # Downscaling
+            pacbed_processed = redim_PACBED(pacbed_non_zero, dim=(680, 680))
+            # Blur PACBED
+            pacbed_processed = gaussian_filter(pacbed_processed, sigma=3) # Prediction is sensitive to this
+        elif pacbed_non_zero.size < 200 * 200:
+            # Upscaling
+            pacbed_processed = redim_PACBED(pacbed_non_zero, dim=self.dim[0:2])
+        else:
+            # no scaling
+            pacbed_processed = pacbed_non_zero
+
+
         # Center PACBED
         pacbed_processed = center_PACBED(pacbed_processed)
-        # Redim PACBED
-        pacbed_processed = redim_PACBED(pacbed_processed, dim=(680, 680))
-        # Blur PACBED
-        pacbed_processed = gaussian_filter(pacbed_processed, sigma=3)
+
+        # Subtract background
+        pacbed_processed = background_subtraction(pacbed_processed, sigma_fac=None)
+        pacbed_processed_scaling = background_subtraction(pacbed_processed, sigma_fac = 0.9)
         
         # Normalize convergenc angle
         conv_angle_norm = self.get_conv_angle_norm(conv_angle)
 
         # Scale PACBED
-        scale_total, PACBED_scaled = self.scale_pacbed(pacbed_processed, conv_angle_norm)
+        scale_total = self.scale_pacbed(pacbed_processed_scaling, conv_angle_norm, scale_const = None)
+        PACBED_scaled = self.rescale_resize(pacbed_processed[:, :, np.newaxis], scale_total, self.dim[0:2])
+        PACBED_scaled = np.tile(PACBED_scaled, (1, 1, 3))
 
         # Make thickness prediction
 
@@ -441,9 +444,9 @@ class Predictor:
         result['mistilt_pred'] = mistilt_predicted
         result['mistilt_cnn_output'] = mistilt_cnn_output
         result['scale'] = scale_total
-        return result
+        return result, PACBED_scaled[:,:,0]
 
-    def validate(self, result, PACBED_measured, conv_angle, azimuth_i=0):
+    def validate(self, result, pacbed_pred_out, conv_angle, azimuth_i=0):
 
         # Create figure with special subplots
         fig, axs = plt.subplots(
@@ -528,29 +531,11 @@ class Predictor:
         axs[0, 1].set_title('Simulated PACBED')
         axs[0, 1].axis('off')
         
-        # Plot loaded PACBED
-        # Preprocess PACBED, like in predict
-        pacbed_non_zero = PACBED_measured.copy()
-        pacbed_non_zero[pacbed_non_zero < 0] = 0
-        # Subtract background
-        pacbed_processed = background_subtraction(pacbed_non_zero)
-        # Center PACBED
-        pacbed_processed = center_PACBED(pacbed_processed)
-        # Zoom
-        pacbed_processed = tf.keras.preprocessing.image.apply_affine_transform(
-            pacbed_processed[:, :, np.newaxis],
-            zx=1 / result['scale'],
-            zy=1 / result['scale'],
-            row_axis=0,
-            col_axis=1,
-            channel_axis=2,
-            fill_mode='nearest',
-            order=1
-        )
-        
+
         # Rotate measured PACBED to match simulated PACBED
-        rot, scale = self.polar_registration(pacbed_processed[:, :, 0], PACBED_sim)
-        PACBED_measured = np.asarray(Image.fromarray(pacbed_processed[:, :, 0]).rotate(-rot, fillcolor = np.amin(pacbed_processed[:, :, 0])))
+        pacbed_pred_out = (pacbed_pred_out - np.amin(pacbed_pred_out))/(np.amax(pacbed_pred_out) - np.amin(pacbed_pred_out))
+        rot, scale, pacbed_measured = self.polar_registration(pacbed_pred_out, PACBED_sim)
+        PACBED_measured = np.asarray(Image.fromarray(pacbed_measured).rotate(-rot, fillcolor = int(np.amin(pacbed_measured))))
         PACBED_measured = center_PACBED(PACBED_measured)
         
         axs[0, 0].imshow(PACBED_measured)
@@ -619,7 +604,29 @@ class Predictor:
 
     def polar_registration(self, pacbed_measured, pacbed_sim):
 
-        radius = pacbed_sim.shape[0] // 2
+        # Finding mistilt direction by identifiying quadrant with the highest intensity
+        h = len(pacbed_measured)
+        w = len(pacbed_measured[1])
+        top_left = np.sum([pacbed_measured[i][:w // 2] for i in range(h // 2)])
+        top_right = np.sum([pacbed_measured[i][w // 2:] for i in range(h // 2)])
+        bot_left = np.sum([pacbed_measured[i][:w // 2] for i in range(h // 2, h)])
+        bot_right = np.sum([pacbed_measured[i][w // 2:] for i in range(h // 2, h)])
+
+        quadrants = [top_left, top_right, bot_left, bot_right]
+        if np.argmax(quadrants) == 0:
+            k = 0
+        elif np.argmax(quadrants) == 1:
+            k = 1
+        elif np.argmax(quadrants) == 2:
+            k = 2
+        elif np.argmax(quadrants) == 3:
+            k = 3
+        # Rotate PACBED, so that mistilt shows in upper left corner
+        pacbed_measured = np.rot90(pacbed_measured, k=k, axes=(0, 1))
+
+
+
+        radius = pacbed_sim.shape[0]
         image_polar = warp_polar(pacbed_sim, radius=radius,
                                  scaling='log')
         rescaled_polar = warp_polar(pacbed_measured, radius=radius,
@@ -633,4 +640,4 @@ class Predictor:
         klog = radius / np.log(radius)
         shift_scale = 1 / (np.exp(shiftc / klog))
 
-        return shiftr, shift_scale
+        return shiftr, shift_scale, pacbed_measured
