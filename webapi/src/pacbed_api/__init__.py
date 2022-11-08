@@ -109,7 +109,7 @@ async def inference(
         f'({pp.zone_axis.u}, {pp.zone_axis.v}, {pp.zone_axis.w})'
     )
     predictor = predictors[key]
-    assert (pp.convergence_angle <= 25) and (pp.convergence_angle >= 15)
+    assert (pp.convergence_angle <= 25) and (pp.convergence_angle >= 5)
 
     fp = parameters.file_params
     if fp.typ == "dm4":
